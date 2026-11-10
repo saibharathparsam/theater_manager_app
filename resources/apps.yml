@@ -2,5 +2,21 @@ resources:
   apps:
     reel_insights_app:
       name: reel-insights-app
-      description: A Gradio application for generating insights from theater data
+      description: An interactive Gradio app for theater sales metrics
       source_code_path: ../src/app
+      resources:
+        - name: sql-warehouse
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: CAN_USE
+      config:
+        command:
+          - python
+          - app.py
+        env:
+          - name: DATABRICKS_WAREHOUSE_ID
+            value_from: sql-warehouse
+          - name: THEATER_CATALOG
+            value: workspace
+          - name: THEATER_SCHEMA
+            value: fde_theater

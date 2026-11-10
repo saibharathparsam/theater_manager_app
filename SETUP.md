@@ -72,11 +72,25 @@ After both jobs complete, the workspace should have:
 
 ## 5. Deploy and start the provided application
 
-The scaffold for a Python application has been provided to you in this bundle.  If you have chosen to build an application you should use this as a starting point.  Start the app with:
+The Gradio application displays aggregated metrics from `denormalized_theater_sales`. First run `databricks bundle deploy` to apply the app's SQL warehouse resource, then ensure the source and denormalized tables have been built (steps 2–3). The app resource uses the bundle's configured warehouse and grants its service principal `CAN_USE` access to that warehouse. Deploy and start the app with:
 
-`databricks apps deploy -t dev -p my-profile`
+```bash
+databricks apps deploy -t dev -p my-profile
+```
+
+Deploy the bundle and run both data jobs first, then run `src/notebooks/grant_app_catalog_access.py` to grant the app service principal access to the Unity Catalog data.
+
+The app defaults to the `workspace.fde_theater` catalog and schema. If you deploy the tables to a different catalog or schema, update `THEATER_CATALOG` and `THEATER_SCHEMA` in both `src/app/app.yaml` and `resources/apps.yml`.
 
 Additional commands for managing the lifecycle of your application can be found at https://docs.databricks.com/aws/en/dev-tools/cli/reference/apps-commands
+
+## 6. Grant the app access to theater tables
+
+After deploying the app and creating the schema, open and run all cells in `src/notebooks/grant_app_catalog_access.py` from the Databricks workspace. The bundle syncs this source file under the bundle's workspace `files/src/notebooks/` directory.
+
+The notebook grants the app service principal catalog/schema traversal and `SELECT`, `INSERT`, and `UPDATE` on the schema. These schema-level data privileges apply to existing and future tables. `INSERT` and `UPDATE` are fine-grained DML privileges currently documented as Beta; if they are unavailable in your workspace, the notebook's grant cell will fail. The notebook intentionally does not substitute `MODIFY`, because `MODIFY` also permits deletes.
+
+Run it as a user authorized to grant privileges on the catalog and schema. The app service principal must exist; deploy the app first. Review the final `SHOW GRANTS` cells to verify the resulting grants.
 
 ## Troubleshooting
 

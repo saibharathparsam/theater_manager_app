@@ -1,4 +1,11 @@
 command: [
-  "python", 
+  "python",
   "app.py"
 ]
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    value_from: sql-warehouse
+  - name: THEATER_CATALOG
+    value: workspace
+  - name: THEATER_SCHEMA
+    value: fde_theater

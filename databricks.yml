@@ -46,6 +46,6 @@ targets:
     mode: development
     default: true
     workspace:
-      root_path: /Workspace/Users/${workspace.current_user.userName}/fde_interview
+      root_path: /Workspace/Users/saibharathparsam@outlook.com/fde_interview
     run_as:
-      user_name: ${workspace.current_user.userName}
+      user_name: saibharathparsam@outlook.com
