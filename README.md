@@ -12,7 +12,7 @@ The scaffold is the customer's existing implementation — a working end-to-end 
 |-------|-------------|
 | **3 source tables** | `theater_layout` (clean), `imdb_movie_metadata` (clean), `pos_ticket_sales` (data-quality issues seeded per POS source) |
 | **1 denormalized table** | `denormalized_theater_sales` — naive inner-join that silently drops orphan rows |
-| **2 jobs** | `seed_theater_data` (ingest) → `build_denormalized_theater_sales` (transform) |
+| **3 jobs** | `seed_theater_data` (ingest), `build_denormalized_theater_sales` (existing transform), and `build_silver_theater_data` (Silver notebooks, run after seeding `theater_analytics.bronze`) |
 | **1 Lakeview dashboard** | `Theater Performance` — KPIs roll up; users filter by theater; reports the past but doesn't let users act |
 | **1 Databricks App** | `reel-insights-app` — interactive sales KPIs and revenue charts by date, genre, and movie |
 

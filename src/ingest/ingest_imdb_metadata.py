@@ -13,8 +13,10 @@ from __future__ import annotations
 import argparse
 import logging
 import random
+from datetime import UTC, datetime
 
 from pyspark.sql import Row, SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.types import (
     DoubleType,
     IntegerType,
@@ -175,6 +177,8 @@ def build_movie_rows(rng: random.Random) -> list[Row]:
 
 
 def main() -> None:
+    ingestion_timestamp = datetime.now(UTC)
+    ingestion_date = ingestion_timestamp.date()
     args = parse_args()
     logging.basicConfig(
         level=args.log_level.upper(),
@@ -192,7 +196,11 @@ def main() -> None:
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {args.catalog}.{args.schema}")
 
     rows = build_movie_rows(rng)
-    df = spark.createDataFrame(rows, schema=MOVIE_SCHEMA)
+    df = (
+        spark.createDataFrame(rows, schema=MOVIE_SCHEMA)
+        .withColumn("ingestion_timestamp", F.lit(ingestion_timestamp))
+        .withColumn("ingestion_date", F.lit(ingestion_date))
+    )
 
     (df.write
        .mode("overwrite")

@@ -64,6 +64,34 @@ resources:
           spec:
             environment_version: "5"
 
+    build_silver_theater_data:
+      name: "Build Silver Theater Data"
+      description: >-
+        Loads theater_analytics.silver from theater_analytics.bronze using the
+        three Silver notebooks. Full-refreshes theater layout and IMDB metadata;
+        incrementally merges POS ticket sales. Run after seeding Bronze.
+      max_concurrent_runs: 1
+      tags:
+        purpose: fde_interview_packet
+      tasks:
+        - task_key: build_silver_theater_layout
+          description: Copy the Bronze theater layout snapshot into Silver.
+          notebook_task:
+            notebook_path: ../src/notebooks/build_silver_theater_layout.py
+            source: WORKSPACE
+
+        - task_key: build_silver_imdb_metadata
+          description: Refresh Silver movie metadata with release_date as DATE.
+          notebook_task:
+            notebook_path: ../src/notebooks/build_silver_imdb_metadata.py
+            source: WORKSPACE
+
+        - task_key: build_silver_pos_ticket_sales
+          description: Incrementally merge normalized POS sales and quarantine invalid rows.
+          notebook_task:
+            notebook_path: ../src/notebooks/build_silver_pos_ticket_sales.py
+            source: WORKSPACE
+
     build_denormalized_theater_sales:
       name: "Build Denormalized Theater Sales"
       description: >-

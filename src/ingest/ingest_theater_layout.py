@@ -13,8 +13,10 @@ from __future__ import annotations
 import argparse
 import logging
 import random
+from datetime import UTC, datetime
 
 from pyspark.sql import Row, SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.types import (
     BooleanType,
     IntegerType,
@@ -79,6 +81,8 @@ LAYOUT_SCHEMA = StructType([
     StructField("row_count", IntegerType(), nullable=False),
     StructField("seats_per_row", IntegerType(), nullable=False),
     StructField("total_seats", IntegerType(), nullable=False),
+    StructField("manager_email", StringType(), nullable=False),
+    StructField("zone_manager_email", StringType(), nullable=False),
 ])
 
 
@@ -116,6 +120,10 @@ def build_layout_rows(rng: random.Random, n_theaters: int) -> list[Row]:
     for i in range(1, n_theaters + 1):
         theater_id = f"T{i:03d}"
         city, state = CITIES[(i - 1) % len(CITIES)]
+        # Stable synthetic identities: all screens share their theater's manager;
+        # state defines the zone. Do not consume RNG values and change seeded data.
+        manager_email = f"manager.{theater_id.lower()}@example.com"
+        zone_manager_email = f"zone_manager.{state.lower()}@example.com"
         prefix = BRAND_PREFIXES[(i * 7) % len(BRAND_PREFIXES)]
         suffix = BRAND_SUFFIXES[(i * 3) % len(BRAND_SUFFIXES)]
         theater_name = f"{prefix} {suffix}"
@@ -144,11 +152,15 @@ def build_layout_rows(rng: random.Random, n_theaters: int) -> list[Row]:
                 row_count=n_rows,
                 seats_per_row=seats_per_row,
                 total_seats=n_rows * seats_per_row,
+                manager_email=manager_email,
+                zone_manager_email=zone_manager_email,
             ))
     return rows
 
 
 def main() -> None:
+    ingestion_timestamp = datetime.now(UTC)
+    ingestion_date = ingestion_timestamp.date()
     args = parse_args()
     logging.basicConfig(
         level=args.log_level.upper(),
@@ -166,7 +178,11 @@ def main() -> None:
     spark.sql(f"CREATE SCHEMA IF NOT EXISTS {args.catalog}.{args.schema}")
 
     rows = build_layout_rows(rng, args.n_theaters)
-    df = spark.createDataFrame(rows, schema=LAYOUT_SCHEMA)
+    df = (
+        spark.createDataFrame(rows, schema=LAYOUT_SCHEMA)
+        .withColumn("ingestion_timestamp", F.lit(ingestion_timestamp))
+        .withColumn("ingestion_date", F.lit(ingestion_date))
+    )
 
     (df.write
        .mode("overwrite")
