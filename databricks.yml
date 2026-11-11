@@ -10,8 +10,13 @@
 #   databricks bundle run    -t dev seed_theater_data
 #   databricks bundle run    -t dev build_denormalized_theater_sales
 #
-# Start the provided Gradio application:
-#   databricks apps start reel_insights_app--profile=my-profile
+# Gold application setup (separate from the legacy dashboard path above):
+#   seed theater_analytics.bronze, then run build_silver_theater_data and
+#   build_gold_theater_data. Create decision_feedback and grant app access
+#   using the owner-run notebooks documented in SETUP.md.
+# Deploy updated Gradio code/config and launch it:
+#   databricks bundle deploy -t dev --profile my-profile --select apps.reel_insights_app
+#   databricks bundle run -t dev --profile my-profile reel_insights_app
 #
 # Default catalog is workspace (Unity Catalog).
 
@@ -37,7 +42,7 @@ variables:
     description: "Schema where bronze + denormalized tables are written."
     default: fde_theater
   warehouse_id:
-    description: "SQL warehouse ID used by the dashboard. Defaults to the Serverless Starter Warehouse present in fresh workspaces; override with --var=\"warehouse_id=<id>\" if it has been renamed or deleted."
+    description: "SQL warehouse ID used by the dashboards and app. Defaults to the Serverless Starter Warehouse present in fresh workspaces; override with --var=\"warehouse_id=<id>\" if it has been renamed or deleted."
     lookup:
       warehouse: "Serverless Starter Warehouse"
 

@@ -6,6 +6,10 @@ env:
   - name: DATABRICKS_WAREHOUSE_ID
     value_from: sql-warehouse
   - name: THEATER_CATALOG
-    value: workspace
+    value: theater_analytics
   - name: THEATER_SCHEMA
-    value: fde_theater
+    value: gold
+  - name: THEATER_FEEDBACK_TABLE
+    value: decision_feedback
+  - name: LEADERSHIP_APPROVERS
+    value: saibharathparsam@outlook.com

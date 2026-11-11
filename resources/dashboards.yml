@@ -5,3 +5,19 @@ resources:
       file_path: ../src/dashboard/theater_performance.lvdash.json
       warehouse_id: ${var.warehouse_id}
       parent_path: ${workspace.root_path}
+
+    theater_data_quality:
+      display_name: "Theater Data Quality"
+      file_path: ../src/dashboard/theater_data_quality.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: theater_analytics
+      dataset_schema: silver
+      parent_path: ${workspace.root_path}
+
+    theater_revenue_insights:
+      display_name: "Theater Revenue Insights"
+      file_path: ../src/dashboard/Theater_Revenue_Insights.lvdash.json
+      warehouse_id: ${var.warehouse_id}
+      dataset_catalog: theater_analytics
+      dataset_schema: gold
+      parent_path: ${workspace.root_path}

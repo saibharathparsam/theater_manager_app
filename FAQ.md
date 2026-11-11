@@ -43,7 +43,14 @@ Yes. All ingest scripts use `seed=42` and write in overwrite mode, so rerunning 
 ## Building the App
 
 **Q: How do I deploy the Databricks App?**
-A basic Python application built on Databricks Apps ([docs](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/index.html)) has been provided as part of this bundle.  It is called `reel-insights-app` and will be deployed to your environment when you run `databricks bundle deploy`.  After you've deployed it you should be able to find it by navigating to the Databricks Apps UI in your workspace.  
+The Gradio app `reel-insights-app` reads `theater_analytics.gold.theater_daily_sales`
+and records approved decisions in `theater_analytics.gold.decision_feedback`.
+Build Gold, create feedback, and apply the owner-run grants in [SETUP.md](SETUP.md#5-deploy-and-start-the-provided-application) first. Publish app-only edits with:
+
+```powershell
+databricks bundle deploy --target dev --profile my-profile --select apps.reel_insights_app
+databricks bundle run --target dev --profile my-profile reel_insights_app
+```
 
 The provided application is a Gradio app however you should feel free to modify it to use whatever framework you feel most comfortable with (Streamlit, Flask, Dash, FastAPI + frontend, etc.).
 
@@ -51,8 +58,14 @@ The provided application is a Gradio app however you should feel free to modify 
 
 `databricks apps start reel-insights-app --profile=my-profile`
 
+This starts compute for the existing deployment; it does not publish local
+changes. Use the deploy/run commands above after editing the app.
 **Q: How does the app authenticate to read tables?**
-Databricks Apps run as a service principal. See the [Databricks Apps documentation](https://docs.databricks.com/aws/en/dev-tools/databricks-apps/index.html) for the auth and permissions patterns; you'll need to grant the app's service principal access to the catalog/schema you're querying.
+Gold reads use the signed-in viewer's proxy-forwarded token with the app's
+`sql` user scope, preserving Gold row filters. Viewers need warehouse/table
+access and must authorize the app. Feedback history and approved inserts use
+the app service principal and require the grants in [SETUP.md](SETUP.md).
+The feedback history is shared with app viewers, not filtered by Gold sales RLS.
 
 ---
 

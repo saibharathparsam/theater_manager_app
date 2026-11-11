@@ -18,7 +18,7 @@ from __future__ import annotations
 import argparse
 import logging
 import random
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from pyspark.sql import Row, SparkSession
 from pyspark.sql import functions as F
@@ -312,7 +312,7 @@ def inject_dq_issues(
 
 
 def main() -> None:
-    ingestion_timestamp = datetime.now(UTC)
+    ingestion_timestamp = datetime.now(timezone.utc)
     ingestion_date = ingestion_timestamp.date()
     args = parse_args()
     logging.basicConfig(

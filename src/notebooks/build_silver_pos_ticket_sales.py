@@ -11,12 +11,16 @@
 # MAGIC 2. Parse modern and legacy timestamps, derive `purchase_date`, and calculate
 # MAGIC    `revenue = seats_sold * ticket_price`. Preserve Bronze ingestion metadata.
 # MAGIC 3. Quarantine missing/blank transaction IDs or POS sources and missing/invalid
-# MAGIC    purchase timestamps in `theater_analytics.silver.pos_ticket_sales_quarantine`.
+# MAGIC    purchase timestamps, plus invalid ticket prices (null, NaN, infinite, or
+# MAGIC    nonpositive), in `theater_analytics.silver.pos_ticket_sales_quarantine`.
 # MAGIC    Retain other issues in Silver with a Boolean flag and an array of reasons.
 # MAGIC    Successfully normalized legacy formats are also flagged.
-# MAGIC 4. Keep one row per transaction ID: latest ingestion timestamp, then greatest
-# MAGIC    source-row hash for ties. MERGE on transaction ID; update only when the
-# MAGIC    ingestion timestamp is newer and the hash differs.
+# MAGIC 4. Keep one row per `(transaction_id, pos_source)`: latest ingestion timestamp,
+# MAGIC    then greatest source-row hash for ties. MERGE on both columns; update only
+# MAGIC    when the ingestion timestamp is newer and the hash differs.
+# MAGIC 5. Before writing either output, replace null non-key STRING values with
+# MAGIC    `Unknown`. Preserve transaction ID/POS source and all non-STRING nulls.
+# MAGIC    DQ reasons and source hashes reflect the values before replacement.
 # MAGIC
 # MAGIC ## Operating notes
 # MAGIC - Use Databricks Runtime 14.3 LTS+ or serverless with Bronze read access and
@@ -24,8 +28,13 @@
 # MAGIC - Interpret timezone-free timestamps as UTC; trust Bronze ingestion metadata.
 # MAGIC - Cluster Silver by `(transaction_id, ingestion_date)`.
 # MAGIC - Quarantine is insert-only history, not an open-issue queue.
+# MAGIC - Price rejection applies to incoming/replayed Bronze only. Existing Silver
+# MAGIC   rows are not removed or migrated, even if a replay also quarantines them.
 # MAGIC - Rows before the replay date and source deletions need separate backfill/CDC.
-# MAGIC   Changed transaction IDs insert new rows; equal-timestamp changes do not update.
+# MAGIC   Changes to either key column insert new rows; equal-timestamp changes do not update.
+# MAGIC - Earlier transaction-ID-only loads may have collapsed different POS sources.
+# MAGIC   Full Bronze replay/backfill is needed to recover rows outside the replay window
+# MAGIC   and recompute historical duplicate flags; this notebook does not migrate them.
 
 # COMMAND ----------
 
@@ -35,7 +44,7 @@ from pyspark.sql import functions as F
 SOURCE_TABLE = "theater_analytics.bronze.pos_ticket_sales"
 TARGET_TABLE = "theater_analytics.silver.pos_ticket_sales"
 QUARANTINE_TABLE = "theater_analytics.silver.pos_ticket_sales_quarantine"
-MERGE_KEYS = ["transaction_id"]
+MERGE_KEYS = ["transaction_id", "pos_source"]
 LEGACY_TIMESTAMP_FORMAT = "MM/dd/yyyy hh:mm a"
 MERGE_UPDATE_CONDITION = """
     source.ingestion_timestamp > target.ingestion_timestamp
@@ -147,14 +156,31 @@ def normalize_sales(bronze: DataFrame) -> DataFrame:
 def invalid_merge_key() -> Column:
     """Identify rows excluded from Silver under the current quality policy.
 
-    Only transaction_id is the MERGE key. POS source and parsed purchase time
-    remain required for the serving dataset; rejected rows go to quarantine.
+    Both transaction_id and pos_source form the MERGE key. Parsed purchase time
+    is also required for the serving dataset; rejected rows go to quarantine.
     """
     return (
         missing("transaction_id")
         | missing("pos_source")
         | F.col("purchase_timestamp").isNull()
     )
+
+
+def should_quarantine() -> Column:
+    """Reject required-value failures and prices already classified by the DQ rules."""
+    return invalid_merge_key() | F.array_contains(
+        F.col("data_quality_issues"), "invalid_ticket_price"
+    )
+
+
+def fill_unknown_strings(sales: DataFrame) -> DataFrame:
+    """Fill display values only after quality checks, routing, and deduplication."""
+    columns = [
+        name
+        for name, dtype in sales.dtypes
+        if dtype == "string" and name not in MERGE_KEYS
+    ]
+    return sales.fillna("Unknown", subset=columns)
 
 
 def select_incremental(sales: DataFrame, silver: DataFrame | None) -> DataFrame:
@@ -177,7 +203,7 @@ def select_incremental(sales: DataFrame, silver: DataFrame | None) -> DataFrame:
 
 
 def deduplicate_sales(sales: DataFrame) -> DataFrame:
-    """Choose one source version per transaction before MERGE to avoid ambiguity."""
+    """Choose one version per transaction/POS source pair before MERGE."""
     latest = Window.partitionBy(*MERGE_KEYS).orderBy(
         F.col("ingestion_timestamp").desc(), F.col("source_row_hash").desc()
     )
@@ -214,7 +240,7 @@ def deduplicate_sales(sales: DataFrame) -> DataFrame:
 # MAGIC ## Incremental load and validation
 # MAGIC The existing Silver table is never overwritten. The quarantine MERGE is
 # MAGIC insert-only by source-row hash; the Silver MERGE updates/inserts by the
-# MAGIC transaction ID. Updates require a newer ingestion timestamp and a different
+# MAGIC `(transaction_id, pos_source)` pair. Updates require a newer ingestion timestamp and a different
 # MAGIC source-row hash; equal-timestamp candidates do not overwrite Silver rows.
 # MAGIC `CLUSTER BY (transaction_id, ingestion_date)` configures liquid clustering,
 # MAGIC not uniqueness. Existing old-schema tables require an explicit migration.
@@ -240,8 +266,8 @@ def validate_silver(silver: DataFrame) -> None:
     )
     if violations:
         raise ValueError(
-            "Silver contains invalid required values or duplicate transaction_id keys; "
-            "resolve them before loading. Old composite-key tables need migration."
+            "Silver contains invalid required values or duplicate "
+            "(transaction_id, pos_source) keys; resolve them before loading."
         )
 
 
@@ -260,11 +286,11 @@ def run_load(spark: SparkSession) -> None:
     # Both output branches use this replay window, including rejected records.
     incremental_bronze = select_incremental(spark.table(SOURCE_TABLE), silver)
     normalized = normalize_sales(incremental_bronze)
-    quarantined = normalized.where(invalid_merge_key()).dropDuplicates(
-        ["source_row_hash"]
+    quarantined = fill_unknown_strings(
+        normalized.where(should_quarantine()).dropDuplicates(["source_row_hash"])
     )
-    candidates = normalized.where(~invalid_merge_key())
-    batch = deduplicate_sales(candidates)
+    candidates = normalized.where(~should_quarantine())
+    batch = fill_unknown_strings(deduplicate_sales(candidates))
 
     spark.sql("CREATE SCHEMA IF NOT EXISTS theater_analytics.silver")
     quarantined.createOrReplaceTempView("pos_sales_quarantine_batch")
@@ -285,7 +311,7 @@ def run_load(spark: SparkSession) -> None:
         )
     # Each MERGE is atomic, but the pair is not one transaction. Insert-only
     # quarantine and deterministic Silver keys make retrying the pair safe.
-    # Do not add ingestion_date to ON: a later ingestion must update the same ID.
+    # Do not add ingestion_date to ON: later ingestions update the same key pair.
     try:
         spark.sql(f"""
             MERGE INTO {QUARANTINE_TABLE} AS target
@@ -297,6 +323,7 @@ def run_load(spark: SparkSession) -> None:
             MERGE INTO {TARGET_TABLE} AS target
             USING pos_sales_silver_batch AS source
             ON target.transaction_id = source.transaction_id
+                AND target.pos_source = source.pos_source
             WHEN MATCHED AND ({MERGE_UPDATE_CONDITION}) THEN UPDATE SET *
             WHEN NOT MATCHED THEN INSERT *
         """)

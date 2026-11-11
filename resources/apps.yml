@@ -2,8 +2,10 @@ resources:
   apps:
     reel_insights_app:
       name: reel-insights-app
-      description: An interactive Gradio app for theater sales metrics
+      description: Gold sales metrics and leadership-approved movie decision feedback
       source_code_path: ../src/app
+      user_api_scopes:
+        - sql
       resources:
         - name: sql-warehouse
           sql_warehouse:
@@ -17,6 +19,10 @@ resources:
           - name: DATABRICKS_WAREHOUSE_ID
             value_from: sql-warehouse
           - name: THEATER_CATALOG
-            value: workspace
+            value: theater_analytics
           - name: THEATER_SCHEMA
-            value: fde_theater
+            value: gold
+          - name: THEATER_FEEDBACK_TABLE
+            value: decision_feedback
+          - name: LEADERSHIP_APPROVERS
+            value: saibharathparsam@outlook.com

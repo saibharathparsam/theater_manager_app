@@ -1,0 +1,460 @@
+{
+  "datasets": [
+    {
+      "name": "ds_quality",
+      "catalog": "theater_analytics",
+      "schema": "silver",
+      "displayName": "Silver snapshot and quarantine history",
+      "queryLines": [
+        "WITH classified AS (\n",
+        "  SELECT ingestion_date, COALESCE(NULLIF(TRIM(pos_source), ''), '(missing source)') AS pos_source,\n",
+        "    CASE WHEN has_data_quality_issue THEN 'Silver - flagged' ELSE 'Silver - no detected issues' END AS outcome,\n",
+        "    1 AS silver_rows, CASE WHEN has_data_quality_issue THEN 1 ELSE 0 END AS flagged_rows,\n",
+        "    0 AS quarantine_versions, ingestion_timestamp\n",
+        "  FROM pos_ticket_sales\n",
+        "  UNION ALL\n",
+        "  SELECT ingestion_date, COALESCE(NULLIF(TRIM(pos_source), ''), '(missing source)') AS pos_source,\n",
+        "    'Quarantine - rejected version' AS outcome, 0 AS silver_rows, 0 AS flagged_rows,\n",
+        "    1 AS quarantine_versions, ingestion_timestamp\n",
+        "  FROM pos_ticket_sales_quarantine\n",
+        ")\n",
+        "SELECT ingestion_date, pos_source, outcome, COUNT(*) AS record_count,\n",
+        "  SUM(silver_rows) AS silver_rows, SUM(flagged_rows) AS flagged_rows,\n",
+        "  SUM(quarantine_versions) AS quarantine_versions, MAX(ingestion_timestamp) AS latest_ingestion\n",
+        "FROM classified\n",
+        "GROUP BY ingestion_date, pos_source, outcome\n",
+        "ORDER BY ingestion_date, pos_source, outcome\n"
+      ],
+      "columns": [
+        {
+          "displayName": "Silver rows",
+          "expression": "COALESCE(SUM(`silver_rows`), 0)"
+        },
+        {
+          "displayName": "Flagged Silver rows",
+          "expression": "COALESCE(SUM(`flagged_rows`), 0)"
+        },
+        {
+          "displayName": "Silver issue rate",
+          "description": "Flagged Silver transactions / all Silver transactions. Quarantine is excluded.",
+          "expression": "SUM(`flagged_rows`) * 1.0 / NULLIF(SUM(`silver_rows`), 0)"
+        },
+        {
+          "displayName": "Quarantined source versions",
+          "expression": "COALESCE(SUM(`quarantine_versions`), 0)"
+        }
+      ]
+    },
+    {
+      "name": "ds_issues",
+      "catalog": "theater_analytics",
+      "schema": "silver",
+      "displayName": "Issue occurrences by source and ingestion date",
+      "queryLines": [
+        "WITH issues AS (\n",
+        "  SELECT ingestion_date, COALESCE(NULLIF(TRIM(pos_source), ''), '(missing source)') AS pos_source,\n",
+        "    'Retained in Silver' AS disposition, EXPLODE(data_quality_issues) AS issue_reason\n",
+        "  FROM pos_ticket_sales\n",
+        "  WHERE has_data_quality_issue = TRUE\n",
+        "  UNION ALL\n",
+        "  SELECT ingestion_date, COALESCE(NULLIF(TRIM(pos_source), ''), '(missing source)') AS pos_source,\n",
+        "    'Quarantined version' AS disposition, EXPLODE(data_quality_issues) AS issue_reason\n",
+        "  FROM pos_ticket_sales_quarantine\n",
+        ")\n",
+        "SELECT ingestion_date, pos_source, disposition, issue_reason,\n",
+        "  INITCAP(REPLACE(issue_reason, '_', ' ')) AS issue_label, COUNT(*) AS issue_occurrences\n",
+        "FROM issues\n",
+        "GROUP BY ingestion_date, pos_source, disposition, issue_reason\n",
+        "ORDER BY issue_occurrences DESC, issue_reason\n"
+      ]
+    }
+  ],
+  "pages": [
+    {
+      "name": "leadership",
+      "displayName": "Leadership overview",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "title",
+            "multilineTextboxSpec": {
+              "lines": ["# Theater Data Quality | Leadership Overview\n"]
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 12, "height": 1}
+        },
+        {
+          "widget": {
+            "name": "scope",
+            "multilineTextboxSpec": {
+              "lines": [
+                "Current Silver transactions and insert-only quarantine history. Use ingestion date and POS source to focus the review. ",
+                "**Flagged does not mean rejected:** recoverable issues remain in Silver. Zero quarantine does not mean zero quality issues.\n"
+              ]
+            }
+          },
+          "position": {"x": 0, "y": 1, "width": 12, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "filter_ingestion_date",
+            "queries": [
+              {
+                "name": "quality_date",
+                "query": {
+                  "datasetName": "ds_quality",
+                  "fields": [{"name": "ingestion_date", "expression": "`ingestion_date`"}],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "issues_date",
+                "query": {
+                  "datasetName": "ds_issues",
+                  "fields": [{"name": "ingestion_date", "expression": "`ingestion_date`"}],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {"fieldName": "ingestion_date", "queryName": "quality_date"},
+                  {"fieldName": "ingestion_date", "queryName": "issues_date"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "Ingestion date (not purchase date)"}
+            }
+          },
+          "position": {"x": 0, "y": 3, "width": 6, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "filter_pos_source",
+            "queries": [
+              {
+                "name": "quality_source",
+                "query": {
+                  "datasetName": "ds_quality",
+                  "fields": [{"name": "pos_source", "expression": "`pos_source`"}],
+                  "disaggregated": false
+                }
+              },
+              {
+                "name": "issues_source",
+                "query": {
+                  "datasetName": "ds_issues",
+                  "fields": [{"name": "pos_source", "expression": "`pos_source`"}],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {"fieldName": "pos_source", "queryName": "quality_source"},
+                  {"fieldName": "pos_source", "queryName": "issues_source"}
+                ]
+              },
+              "frame": {"showTitle": true, "title": "POS source"}
+            }
+          },
+          "position": {"x": 6, "y": 3, "width": 6, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "kpi_silver_rows",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_quality",
+                "fields": [{"name": "silver_rows", "expression": "MEASURE(`Silver rows`)"}],
+                "disaggregated": false
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "silver_rows",
+                  "displayName": "Silver transactions",
+                  "format": {"type": "number-plain", "decimalPlaces": {"type": "exact", "places": 0}}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Silver transactions",
+                "showDescription": true,
+                "description": "One retained row per transaction ID and POS source pair, including flagged rows."
+              }
+            }
+          },
+          "position": {"x": 0, "y": 5, "width": 4, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "kpi_issue_rate",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_quality",
+                "fields": [{"name": "issue_rate", "expression": "MEASURE(`Silver issue rate`)"}],
+                "disaggregated": false
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "issue_rate",
+                  "displayName": "Flagged / Silver",
+                  "format": {"type": "number-percent", "decimalPlaces": {"type": "exact", "places": 2}}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Silver issue rate",
+                "showDescription": true,
+                "description": "Weighted transaction rate; excludes quarantine. No Silver rows = no rate."
+              }
+            }
+          },
+          "position": {"x": 4, "y": 5, "width": 4, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "kpi_quarantine",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_quality",
+                "fields": [{"name": "quarantine_versions", "expression": "MEASURE(`Quarantined source versions`)"}],
+                "disaggregated": false
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "quarantine_versions",
+                  "displayName": "Rejected source versions",
+                  "format": {"type": "number-plain", "decimalPlaces": {"type": "exact", "places": 0}}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Quarantined source versions",
+                "showDescription": true,
+                "description": "Insert-only history, not unique transactions or an unresolved backlog."
+              }
+            }
+          },
+          "position": {"x": 8, "y": 5, "width": 4, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "source_issue_rate",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_quality",
+                "fields": [
+                  {"name": "pos_source", "expression": "`pos_source`"},
+                  {"name": "issue_rate", "expression": "MEASURE(`Silver issue rate`)"}
+                ],
+                "disaggregated": false,
+                "orders": [{"direction": "DESC", "expression": "MEASURE(`Silver issue rate`)"}]
+              }
+            }],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {"fieldName": "pos_source", "displayName": "POS source", "scale": {"type": "categorical"}},
+                "y": {
+                  "fieldName": "issue_rate",
+                  "displayName": "Flagged / Silver",
+                  "scale": {"type": "quantitative", "domainMin": 0},
+                  "format": {"type": "number-percent", "decimalPlaces": {"type": "exact", "places": 1}}
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Which POS sources need attention?",
+                "showDescription": true,
+                "description": "Compare rates, not just volumes. No quality targets or SLAs have been defined."
+              }
+            }
+          },
+          "position": {"x": 0, "y": 8, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "issue_drivers",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_issues",
+                "fields": [
+                  {"name": "issue_label", "expression": "`issue_label`"},
+                  {"name": "disposition", "expression": "`disposition`"},
+                  {"name": "total_occurrences", "expression": "SUM(`issue_occurrences`)"}
+                ],
+                "disaggregated": false,
+                "orders": [{"direction": "DESC", "expression": "SUM(`issue_occurrences`)"}]
+              }
+            }],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {"fieldName": "total_occurrences", "displayName": "Issue occurrences", "scale": {"type": "quantitative"}},
+                "y": {"fieldName": "issue_label", "displayName": "Detected issue", "scale": {"type": "categorical"}},
+                "color": {
+                  "fieldName": "disposition",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {"value": "Retained in Silver", "color": "#E69F00"},
+                      {"value": "Quarantined version", "color": "#D55E00"}
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "What is driving the quality flags?",
+                "showDescription": true,
+                "description": "A record can have multiple reasons; these counts overlap. Legacy formats are normalized, not rejected."
+              }
+            }
+          },
+          "position": {"x": 6, "y": 8, "width": 6, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "source_scorecard",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_quality",
+                "fields": [
+                  {"name": "pos_source", "expression": "`pos_source`"},
+                  {"name": "silver_count", "expression": "MEASURE(`Silver rows`)"},
+                  {"name": "flagged_count", "expression": "MEASURE(`Flagged Silver rows`)"},
+                  {"name": "issue_rate", "expression": "MEASURE(`Silver issue rate`)"},
+                  {"name": "quarantine_count", "expression": "MEASURE(`Quarantined source versions`)"},
+                  {"name": "last_source_ingestion", "expression": "MAX(`latest_ingestion`)"}
+                ],
+                "disaggregated": false,
+                "orders": [{"direction": "DESC", "expression": "MEASURE(`Silver issue rate`)"}]
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {"fieldName": "pos_source", "displayName": "POS source"},
+                  {"fieldName": "silver_count", "displayName": "Silver transactions", "format": {"type": "number", "decimalPlaces": {"type": "exact", "places": 0}}},
+                  {"fieldName": "flagged_count", "displayName": "Flagged transactions", "format": {"type": "number", "decimalPlaces": {"type": "exact", "places": 0}}},
+                  {"fieldName": "issue_rate", "displayName": "Silver issue rate", "format": {"type": "number-percent", "decimalPlaces": {"type": "exact", "places": 2}}},
+                  {"fieldName": "quarantine_count", "displayName": "Quarantined versions", "format": {"type": "number", "decimalPlaces": {"type": "exact", "places": 0}}},
+                  {"fieldName": "last_source_ingestion", "displayName": "Latest source ingestion"}
+                ]
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "POS source leadership scorecard",
+                "showDescription": true,
+                "description": "Latest source ingestion is not the Silver job completion time. Quarantine versions and Silver transactions have different grains."
+              }
+            }
+          },
+          "position": {"x": 0, "y": 14, "width": 12, "height": 5}
+        },
+        {
+          "widget": {
+            "name": "silver_daily_distribution",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "ds_quality",
+                "fields": [
+                  {"name": "ingestion_date", "expression": "`ingestion_date`"},
+                  {"name": "outcome", "expression": "`outcome`"},
+                  {"name": "total_records", "expression": "SUM(`record_count`)"}
+                ],
+                "disaggregated": false,
+                "orders": [{"direction": "ASC", "expression": "`ingestion_date`"}]
+              }
+            }],
+            "spec": {
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {"fieldName": "ingestion_date", "displayName": "Ingestion date", "scale": {"type": "temporal"}},
+                "y": {"fieldName": "total_records", "displayName": "Records / versions", "scale": {"type": "quantitative"}},
+                "color": {
+                  "fieldName": "outcome",
+                  "scale": {
+                    "type": "categorical",
+                    "mappings": [
+                      {"value": "Silver - no detected issues", "color": "#0072B2"},
+                      {"value": "Silver - flagged", "color": "#E69F00"},
+                      {"value": "Quarantine - rejected version", "color": "#D55E00"}
+                    ]
+                  }
+                }
+              },
+              "frame": {
+                "showTitle": true,
+                "title": "Current records by ingestion date",
+                "showDescription": true,
+                "description": "Snapshot distribution, not pipeline-run history. Silver updates replace earlier versions; quarantine retains history."
+              }
+            }
+          },
+          "position": {"x": 0, "y": 19, "width": 12, "height": 6}
+        },
+        {
+          "widget": {
+            "name": "policy_and_coverage",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## How to interpret this dashboard\n",
+                "\n",
+                "**Quarantine:** missing/blank transaction ID or POS source, missing/unparseable purchase timestamp, or invalid ticket price (null, NaN, infinite, zero, or negative). Price rejection applies to incoming/replayed Bronze only; existing invalid-price Silver rows remain and may also appear in quarantine after replay. ",
+                "**Retained flags:** invalid seats/revenue, missing theater/movie/screen IDs, missing/invalid showtime, normalized legacy timestamps, and duplicate-key winners. Historical Silver can still contain invalid-price flags. Duplicate flags do not count discarded Bronze rows.\n",
+                "\n",
+                "**Coverage gaps:** non-empty orphan theater/movie IDs and IMAX-screen mismatches are not checked by the current Silver pipeline. 'No detected issues' is not a completeness or correctness guarantee. ",
+                "This dashboard does not calculate financial loss, enforce quality SLAs, or track issue resolution. Date/source filters affect both datasets; chart-click cross-filtering stays within its dataset.\n"
+              ]
+            }
+          },
+          "position": {"x": 0, "y": 25, "width": 12, "height": 4}
+        }
+      ]
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "canvasBackgroundColor": {"light": "#F4F7FA", "dark": "#1F272D"},
+      "widgetBackgroundColor": {"light": "#FFFFFF", "dark": "#11171C"},
+      "widgetBorderColor": {"light": "#FFFFFF", "dark": "#11171C"},
+      "fontColor": {"light": "#182B49", "dark": "#E8ECF0"},
+      "selectionColor": {"light": "#2272B4", "dark": "#8ACAFF"},
+      "visualizationColors": ["#0072B2", "#E69F00", "#009E73", "#CC79A7", "#D55E00", "#56B4E9"],
+      "widgetHeaderAlignment": "LEFT"
+    }
+  }
+}
