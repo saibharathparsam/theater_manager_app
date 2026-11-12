@@ -8,9 +8,9 @@
 # MAGIC Then LEFT JOIN Silver theater layout and IMDb metadata, preserving unmatched
 # MAGIC groups. Null reference text becomes `Unknown`; other types remain nullable.
 # MAGIC Manager/zone-manager emails come from the matched theater/screen, not a guess.
-# MAGIC `open_time` and `close_time` are native TIME(0), not strings or dated timestamps.
+# MAGIC `open_time` and `close_time` are HH:mm:ss strings, not dated timestamps.
 # MAGIC Unmatched times remain null; midnight is `00:00:00`. Invalid source times fail.
-# MAGIC Requires TIME-capable compute (Databricks Runtime 18 LTS+ or supported serverless).
+# MAGIC No Delta TIME table feature is required on serverless compute.
 # MAGIC
 # MAGIC Full-refresh `theater_analytics.gold.theater_daily_sales` so corrected POS
 # MAGIC transactions and reference changes are reflected without double-counting.
@@ -48,8 +48,20 @@ SELECT
     COALESCE(l.state, 'Unknown') AS state,
     COALESCE(l.manager_email, 'Unknown') AS manager_email,
     COALESCE(l.zone_manager_email, 'Unknown') AS zone_manager_email,
-    CAST(l.open_time AS TIME(0)) AS open_time,
-    CAST(l.close_time AS TIME(0)) AS close_time,
+    CASE
+        WHEN l.open_time IS NULL THEN CAST(NULL AS STRING)
+        WHEN l.open_time RLIKE '^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$'
+            THEN CASE WHEN length(l.open_time) = 5
+                THEN concat(l.open_time, ':00') ELSE l.open_time END
+        ELSE CAST(raise_error('Invalid theater layout open_time; expected HH:mm or HH:mm:ss') AS STRING)
+    END AS open_time,
+    CASE
+        WHEN l.close_time IS NULL THEN CAST(NULL AS STRING)
+        WHEN l.close_time RLIKE '^([01][0-9]|2[0-3]):[0-5][0-9](:[0-5][0-9])?$'
+            THEN CASE WHEN length(l.close_time) = 5
+                THEN concat(l.close_time, ':00') ELSE l.close_time END
+        ELSE CAST(raise_error('Invalid theater layout close_time; expected HH:mm or HH:mm:ss') AS STRING)
+    END AS close_time,
     l.screen_number,
     COALESCE(l.screen_type, 'Unknown') AS screen_type,
     l.imax_capable,
@@ -89,11 +101,6 @@ def run_load(spark: SparkSession) -> None:
 
     gold = spark.sql(DAILY_SALES_QUERY)
     spark.sql("CREATE SCHEMA IF NOT EXISTS theater_analytics.gold")
-    if spark.catalog.tableExists(TARGET_TABLE):
-        spark.sql(
-            f"ALTER TABLE {TARGET_TABLE} SET TBLPROPERTIES "
-            "('delta.feature.timeType' = 'supported')"
-        )
     (
         gold.write.format("delta")
         .mode("overwrite")

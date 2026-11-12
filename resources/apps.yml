@@ -7,6 +7,10 @@ resources:
       user_api_scopes:
         - sql
       resources:
+        - name: quarantine-recovery-job
+          job:
+            id: ${resources.jobs.build_silver_theater_data.id}
+            permission: CAN_MANAGE_RUN
         - name: sql-warehouse
           sql_warehouse:
             id: ${var.warehouse_id}
@@ -26,3 +30,7 @@ resources:
             value: decision_feedback
           - name: LEADERSHIP_APPROVERS
             value: saibharathparsam@outlook.com
+          - name: QUARANTINE_OPERATORS
+            value: saibharathparsam@outlook.com
+          - name: QUARANTINE_RECOVERY_JOB_ID
+            value_from: quarantine-recovery-job

@@ -46,6 +46,28 @@ def dashboard_data(empty=False):
 
 
 class GoldAppUiTests(unittest.TestCase):
+    def test_separate_pages_preserve_notification_and_approval_wiring(self):
+        config = app.gradio_app.config
+        tabs = {
+            component["props"].get("id"): component
+            for component in config["components"] if component["type"] == "tabitem"
+        }
+        self.assertEqual(set(tabs), {"sales", "feedback", "quarantine"})
+        self.assertFalse(tabs["quarantine"]["props"]["visible"])
+        self.assertEqual(app.operations_panel._id, tabs["quarantine"]["id"])
+        self.assertIn(app.feedback_scope._id, [component._id for component in app.outputs])
+        dependencies = config["dependencies"]
+        approval = next(event for event in dependencies if event["outputs"] == [app.status._id])
+        self.assertEqual(approval["inputs"], [
+            app.decision._id, app.recommendations._id, app.theater_filter._id,
+            app.confirm._id, app.note._id, app.state_filter._id,
+        ])
+        self.assertTrue(any(
+            event["outputs"] == [component._id for component in app.operations_outputs]
+            and (app.gradio_app._id, "load") in event["targets"]
+            for event in dependencies
+        ))
+
     def test_notification_timer_and_load_only_update_notification_components(self):
         self.assertEqual(app.decision_timer.value, 60)
         self.assertTrue(app.decision_timer.active)
@@ -233,6 +255,8 @@ class GoldAppUiTests(unittest.TestCase):
         self.assertEqual(result[0]["value"], "")
         self.assertEqual(result[16]["value"], "NY")
         self.assertIn("State: NY", result[5])
+        self.assertIn("State: NY", result[17])
+        self.assertIn("All theaters in selected state", result[17])
         with patch.object(app.sales, "approve_decision", return_value="Recorded") as approve:
             app.approve("id", {}, "", True, "Reviewed", request, "NY")
         self.assertEqual(approve.call_args.args[-1], "NY")

@@ -28,13 +28,31 @@ For the editable diagram, see [`reference/fde_design_and_build_asis_architecture
 
 ## Enhanced Data Flow
 
-Bronze -> Silver with DQ validation -> Gold -> dashboards and the app, with
-leadership decision feedback.
+Bronze -> Silver with DQ validation -> Gold -> dashboards and the app. Operations
+can review quarantined records, submit audited corrections, and recover approved
+records through Silver and Gold. Leadership decisions are shared in the app.
 
 [View the full-size diagram](reference/theater_enhancements_dataflow.svg) or use
 the [editable Mermaid source](reference/theater_enhancements_dataflow.md).
 
 ![Enhanced theater analytics data flow](reference/theater_enhancements_dataflow.svg)
+
+### Reel Insights app design
+
+```mermaid
+flowchart LR
+  User["App user"] --> Sales["Sales overview<br/>KPIs + recommendations"]
+  User --> Decisions["Decisions & feedback<br/>Approval + shared notifications"]
+  Operator["Authorized operator"] --> Operations["Quarantine operations<br/>Review + correction + status"]
+  Sales --> Gold["Gold sales<br/>Viewer access + row filter"]
+  Decisions --> Feedback["Decision feedback<br/>Shared with app users"]
+  Operations --> Queue["Quarantine + request ledger"]
+  Queue --> Job["Recovery job<br/>Silver then Gold"]
+```
+
+Changing the Sales overview scope updates the decision form and resets its
+confirmation. The Operations page is hidden from non-operators, and server-side
+callbacks enforce the same restriction.
 
 ## What the Customer Is Asking For
 
@@ -138,11 +156,14 @@ becomes `Unknown` while other types remain nullable. Match flags expose gaps.
 Transaction-level fields are excluded. Null showtimes remain in null-date groups;
 flagged Silver rows remain included, and quarantine is not read. Duplicate source
 keys fail before writing. Run without concurrent Silver writers.
-Gold `open_time`/`close_time` are native `TIME(0)` columns, with nulls for unmatched
+Gold `open_time`/`close_time` are `HH:mm:ss` STRING columns, with nulls for unmatched
 references and `00:00:00` for midnight. Invalid time strings fail the load.
-Use TIME-capable compute (Databricks Runtime 18 LTS+ or supported serverless).
-Existing Gold targets have the Delta `timeType` feature enabled before overwrite;
-downstream readers must also support TIME.
+Silver `HH:mm` values gain `:00` seconds; valid `HH:mm:ss` values are preserved.
+No Delta `timeType` feature is enabled or required. The next full refresh replaces
+the previous time-column types using `overwriteSchema`; other columns are unchanged.
+After a recovery-triggered Gold failure, deploy the corrected notebook and repair
+the failed Gold task and its dependent completion task in the original Silver job
+run. Do not resubmit the same correction as a new request.
 
 ### Gold app and decision feedback
 
@@ -170,7 +191,60 @@ means present in Gold sales for the selected dates, not a live screening schedul
 The page no longer includes the Total Revenue/Showings KPI cards or Movie
 Placement Matrix; revenue and showing measures remain in the performance detail.
 
-The existing Gradio app now reads Gold daily sales for the latest seven calendar
+### Operations quarantine recovery
+
+The app's **Quarantine operations** page is restricted
+by proxy-authenticated email to `QUARANTINE_OPERATORS`; its default is the
+configured operator in the app YAML files. Other app viewers cannot load or
+submit quarantine records, even through callbacks. Operations sees all quarantine
+records, independently of Gold sales RLS. Use POS-source/rejection-reason filters
+to narrow the latest 100 open versions; the latest 50 requests show outcomes.
+
+1. Select the exact quarantined source version and compare it with the source POS.
+2. Enter only corrected fields as JSON, e.g. `{"ticket_price": 14.5}`, provide
+   a reason, and explicitly confirm source verification. Prices/IDs are never guessed.
+3. Submit an audited request and start/queue **Build Silver Theater Data**.
+   The app does not directly insert, update, or delete Silver POS sales.
+4. The single-writer job runs normal ingestion, reuses the Silver normalizer
+   and admission rules, and additionally requires valid showtime/measures and
+   unambiguous movie/theater-screen references for recovery. Existing Silver keys
+   are conflicts, not an excuse to overwrite transactions.
+5. Valid records are inserted into Silver with original ingestion metadata.
+   Combined Silver explicitly includes recovered versions even outside its
+   incremental date window; Gold is refreshed only when recoveries need publishing.
+
+The ledger `theater_analytics.silver.quarantine_recovery_requests` records the
+original quarantine version/payload, corrections, operator, reason, timestamps,
+job run ID, restored key/hash, and result. Status progresses
+`SUBMITTED -> APPLIED -> COMPLETED`, or `SUBMITTED -> REJECTED`.
+`APPLIED` means Silver is restored but downstream publication is not yet complete.
+Rejected rows remain open for a new corrected request. Active/completed versions
+are hidden from the open queue; **original quarantine rows are never deleted**.
+Historical DQ dashboards still count quarantine history, not just unresolved work.
+
+Submission retries use the same request ID and job idempotency token. A changed
+form cannot reuse an already-saved ID. After rejection, refresh/reselect to create
+a new request. Writes to separate Delta tables are not one atomic transaction:
+the job verifies the exact restored hash and safely resumes after a partial
+failure. Processing, enrichment, publication, and completion tasks retry transient
+failures twice. If Gold/combined Silver still fails, retry the full Silver job; do not mark a
+request complete manually. Check the recorded run ID for infrastructure failures.
+Run the workflow as the existing bundle job identity, with no external/manual
+Silver writers or concurrent standalone Gold refreshes. The app receives only
+quarantine SELECT and request-ledger SELECT/MODIFY; trust app administrators,
+since UC MODIFY includes updates/deletes and job CAN_MANAGE_RUN can run the
+entire Silver job. This is application-attributed audit history, not an immutable
+platform audit log. See [SETUP.md](SETUP.md#9-enable-operations-quarantine-recovery)
+for provisioning and deployment.
+
+The Gradio app separates **Sales overview**, **Decisions & feedback**, and the
+operator-only **Quarantine operations** page. Choose a sales scope and review
+candidates on Sales overview, then record feedback on Decisions & feedback; its
+scope card shows the current state, theater, and period. Changing the sales
+filters resets the approval form. The shared decision feed and 60-second
+notifications continue across pages.
+
+The app reads Gold daily sales for the latest seven calendar
 days ending at the maximum `show_date` visible to the signed-in user under Gold
 row-level security, with optional state and theater filters. State selection
 limits the theater choices; a previously selected theater outside the state

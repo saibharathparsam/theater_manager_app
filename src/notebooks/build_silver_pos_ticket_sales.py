@@ -28,6 +28,8 @@
 # MAGIC - Interpret timezone-free timestamps as UTC; trust Bronze ingestion metadata.
 # MAGIC - Cluster Silver by `(transaction_id, ingestion_date)`.
 # MAGIC - Quarantine is insert-only history, not an open-issue queue.
+# MAGIC   Operations resolution is tracked separately in `quarantine_recovery_requests`;
+# MAGIC   run the Silver job's recovery wrapper to restore approved corrections.
 # MAGIC - Price rejection applies to incoming/replayed Bronze only. Existing Silver
 # MAGIC   rows are not removed or migrated, even if a replay also quarantines them.
 # MAGIC - Rows before the replay date and source deletions need separate backfill/CDC.

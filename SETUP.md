@@ -269,6 +269,73 @@ manager emails and ingestion metadata, are preserved. They do not change the
 existing denormalized transform or app to read Silver.
 The runner needs Bronze read and Silver schema/table create and write permissions.
 
+## 9. Enable Operations quarantine recovery
+
+This feature requires coordinated provisioning, Silver-job deployment, and app
+deployment. Do not enable the Operations UI before provisioning the ledger.
+Without that ledger the Silver job logs that recovery is disabled and retains
+normal ingestion behavior. Local implementation/testing does not enable it in the
+workspace.
+
+1. As owner, after creating the Silver/quarantine tables, run
+   [`create_quarantine_recovery.py`](src/notebooks/create_quarantine_recovery.py).
+   It creates the request ledger without changing sales or existing quarantine.
+2. As owner, run
+   [`grant_quarantine_access.py`](src/notebooks/grant_quarantine_access.py).
+   It grants app SELECT on quarantine and SELECT/MODIFY on the ledger only;
+   it does **not** grant app MODIFY on Silver sales or quarantine. Review any
+   older broad grants separately.
+3. Configure `QUARANTINE_OPERATORS` in both
+   [`resources/apps.yml`](resources/apps.yml) and
+   [`src/app/app.yaml`](src/app/app.yaml). It defaults to
+   `saibharathparsam@outlook.com`. Operator permission is distinct from leadership
+   approval permission and grants access to the full quarantine queue.
+4. Deploy the Silver job and app together, then publish the app source:
+
+   ```powershell
+   databricks bundle validate --strict --target dev --profile my-profile
+   databricks bundle deploy --target dev --profile my-profile --select jobs.build_silver_theater_data --select apps.reel_insights_app
+   databricks bundle run --target dev --profile my-profile reel_insights_app
+   ```
+
+   The app resource binds `QUARANTINE_RECOVERY_JOB_ID` to the existing Silver job
+   with `CAN_MANAGE_RUN`. It does not need additional user OAuth scopes for the
+   job, because request reads/writes and job submission use the app identity.
+   The job runs as the bundle execution identity, which needs Silver writes,
+   reference reads, ledger writes, and Gold refresh permission.
+5. Open Operations as an authorized user, inspect a version, enter a JSON patch,
+   give a reason and confirm source verification, then submit. Submission means
+   **queued**, not restored. Refresh Operations to see `REJECTED`, `APPLIED`, or
+   `COMPLETED`. The response and history include the job run ID.
+
+The updated `build_silver_pos_ticket_sales` task uses
+[`process_quarantine_recovery.py`](src/notebooks/process_quarantine_recovery.py),
+which first executes the existing POS notebook, then processes corrections with
+its exact normalizer. Reference tasks finish before this task. All runs of the
+Silver job are serialized/queued (`max_concurrent_runs: 1`); do not run standalone
+writers concurrently. Combined Silver bypasses its ingestion-date window for
+APPLIED hashes, so old quarantined data is not skipped and original ingestion
+timestamps do not advance replay watermarks. Conditional downstream tasks refresh
+Gold and verify Silver/combined Silver before marking the ledger complete.
+Processing and downstream tasks retry failures twice before requiring intervention.
+Without APPLIED recoveries, the job retains its normal Silver-only behavior.
+
+Rejected requests preserve their error and leave their quarantine version open.
+Correct and reselect to submit a new request. For infrastructure/downstream
+failures, inspect job logs and rerun **the full Silver job**:
+
+```powershell
+databricks bundle run --target dev --profile my-profile build_silver_theater_data
+```
+
+Retries recognize a previously inserted recovery by its deterministic request/data
+hash. They do not overwrite an existing different Silver version. The original
+quarantine row and request history are retained; historical quarantine dashboard
+counts do not shrink. Gold is a full snapshot refresh after recovery, not an
+incremental addition to already aggregated revenue. Avoid concurrent standalone
+Gold runs. Provisioning notebooks and these deployment commands must be executed
+explicitly; implementing the feature locally does not move production data.
+
 ## Troubleshooting
 
 See `FAQ.md`.
