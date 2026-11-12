@@ -1,20 +1,48 @@
-# FDE Interview Packet: Theater Sales Review
+# Theater Sales Analytics Modernization
 
-A Declarative Automation Bundle that provisions an end-to-end theater sales analytics environment for the FDE Build, Demo & Delivery interview. The candidate receives the as-is implementation as a starting point and builds a real POC of an architectural component that solves a business problem as defined in their scenario prompt.
+This project modernizes an existing theater-sales pipeline into a Databricks
+analytics and operations solution. The original implementation joined raw POS,
+theater, and movie data into a single dashboard table. The modernized solution
+adds validated Silver datasets, a Gold reporting layer, data-quality visibility,
+leadership decision workflows, and an audited path for correcting quarantined data.
 
-**Ready to deploy?** Jump to **[SETUP.md](SETUP.md)**.
+The implementation is a proof of concept built with a Databricks Asset Bundle.
+It retains the original pipeline alongside the new workflows; it is not a claim
+of production readiness or measured business impact.
 
-## As-Is Architecture
+**Get started:** [Setup and deployment](SETUP.md) · [Data flow](#enhanced-data-flow) ·
+[App design](#reel-insights-app-design) · [Fast iteration](#fast-iteration)
 
-The scaffold is the customer's existing implementation — a working end-to-end pipeline you can explore before proposing changes.
+## Forward Deployed Engineer contributions
 
-| Asset | Description |
-|-------|-------------|
-| **3 source tables** | `theater_layout` (clean), `imdb_movie_metadata` (clean), `pos_ticket_sales` (data-quality issues seeded per POS source) |
-| **1 denormalized table** | `denormalized_theater_sales` — naive inner-join that silently drops orphan rows |
-| **4 jobs** | `seed_theater_data` (ingest), `build_denormalized_theater_sales` (existing transform), `build_silver_theater_data` (Silver notebooks), and `build_gold_theater_data` (daily Gold aggregation after Silver) |
-| **3 Lakeview dashboards** | `Theater Performance` (legacy sales KPIs), `Theater Data Quality` (Silver and quarantine), and `Theater Revenue Insights` (Gold daily sales) |
-| **1 Databricks App** | `reel-insights-app` — Gold sales KPIs, movie recommendations, and leadership-approved decision feedback |
+This project demonstrates an FDE approach: connecting a business decision to the
+underlying data, building an end-to-end solution, and making it usable by both
+leadership and operations.
+
+| Focus | Work delivered |
+|-------|----------------|
+| **Modernize the data foundation** | Built Bronze-to-Silver normalization, source-aware incremental merges, reference enrichment, and Gold daily sales aggregation while preserving the legacy path. |
+| **Make data quality actionable** | Added validation, an insert-only quarantine, and a data-quality dashboard with source and issue-level visibility. |
+| **Enable business decisions** | Built Gold dashboards and the Reel Insights app with state/theater filters, transparent movie-review rankings, leadership approval, and shared decision notifications. |
+| **Close the operational loop** | Added an operator-restricted correction workflow, an audit ledger, and a controlled recovery job that validates changes and refreshes downstream data. |
+| **Design for governed delivery** | Used viewer-scoped Gold access and row-level security where configured, separate app permissions for feedback and recovery, and repeatable bundle-based deployment and tests. |
+
+The movie rankings are decision-support signals, not forecasts or automated
+screening changes. The workflow retains original quarantined records and records
+the status of each correction; it does not replace platform audit logging.
+
+## Technology stack
+
+- **Platform and orchestration:** Databricks, Unity Catalog, Databricks Asset Bundles, and Lakeflow Jobs.
+- **Data engineering:** Python, PySpark, Spark SQL, Delta Lake, and serverless compute.
+- **Analytics and application:** Databricks SQL, Lakeview dashboards, and a Python/Gradio Databricks App.
+- **Governance and validation:** viewer-scoped SQL access, configurable row filters, service-principal grants, and Python unit tests.
+
+## Original architecture
+
+The starting implementation loads source tables and uses an inner join to create
+a single wide table for the Theater Performance dashboard. Unmatched records can
+be dropped by that join. The legacy flow is retained for comparison:
 
 ```mermaid
 flowchart LR
@@ -26,7 +54,7 @@ flowchart LR
 
 For the editable diagram, see [`reference/fde_design_and_build_asis_architecture.excalidraw`](reference/fde_design_and_build_asis_architecture.excalidraw) or open it directly in [Excalidraw](https://excalidraw.com/#json=XoIQCpDoQJLFVXLSI3FAy,sLHBahpjIT5TF7fXiYB8bg).
 
-## Enhanced Data Flow
+## Enhanced data flow
 
 Bronze -> Silver with DQ validation -> Gold -> dashboards and the app. Operations
 can review quarantined records, submit audited corrections, and recover approved
@@ -44,7 +72,7 @@ flowchart LR
   User["App user"] --> Sales["Sales overview<br/>KPIs + recommendations"]
   User --> Decisions["Decisions & feedback<br/>Approval + shared notifications"]
   Operator["Authorized operator"] --> Operations["Quarantine operations<br/>Review + correction + status"]
-  Sales --> Gold["Gold sales<br/>Viewer access + row filter"]
+  Sales --> Gold["Gold sales<br/>Viewer access + configured row filter"]
   Decisions --> Feedback["Decision feedback<br/>Shared with app users"]
   Operations --> Queue["Quarantine + request ledger"]
   Queue --> Job["Recovery job<br/>Silver then Gold"]
@@ -54,9 +82,40 @@ Changing the Sales overview scope updates the decision form and resets its
 confirmation. The Operations page is hidden from non-operators, and server-side
 callbacks enforce the same restriction.
 
-## What the Customer Is Asking For
+### Data movement
 
-The customer believes their problem is the dashboard. **Your job is to read between the lines** — the gaps in this scaffold are the gaps your proposed architecture needs to address. See the candidate prompt for details.
+```mermaid
+flowchart LR
+  Sources["POS, theater layout<br/>and movie metadata"] --> Bronze["Bronze<br/>Raw source tables"]
+  Bronze --> Validate["Normalize + validate"]
+  Validate -->|Accepted POS| Silver["Silver POS sales"]
+  Validate -->|Rejected POS| Quarantine["Quarantine<br/>Original records retained"]
+  Bronze --> References["Silver theater and<br/>movie references"]
+  Quarantine -->|Operator correction| Requests["Recovery request ledger"]
+  Requests -->|Validate and restore| Silver
+  Silver --> Combined["Combined Silver sales"]
+  References --> Combined
+  Silver --> Gold["Gold daily sales"]
+  References --> Gold
+  Gold --> Consumers["App + revenue dashboards"]
+```
+
+Recovery inserts validated corrections into Silver, refreshes combined Silver
+and Gold, and then marks the request complete. Quarantine originals remain in
+place for audit.
+
+## Solution components
+
+| Component | Purpose |
+|-----------|---------|
+| **Source and legacy pipeline** | Generates POS, theater, and movie datasets and retains the original denormalized dashboard path. |
+| **Silver and Gold jobs** | Validate and enrich sales in Silver; aggregate daily sales in Gold for reporting. |
+| **Three Lakeview dashboards** | Theater Performance, Theater Data Quality, and Theater Revenue Insights. |
+| **Reel Insights app** | Sales overview, leadership decisions and feedback, and restricted quarantine operations. |
+
+Four bundle jobs support ingestion, the legacy transform, Silver processing, and
+Gold aggregation. See [SETUP.md](SETUP.md) for prerequisites, execution order,
+access controls, and recovery procedures.
 
 ## Fast Iteration
 
@@ -74,9 +133,9 @@ Seeding overwrites all three source tables.
 | **Dashboard only** | Editing `src/dashboard/theater_performance.lvdash.json` | `databricks bundle deploy --target dev --profile my-profile`. Skip both jobs. |
 | **Transform only** | Source tables exist (Silver job requires `theater_analytics.bronze`); you changed a Silver notebook or the denormalized transform | `databricks bundle deploy --target dev --profile my-profile`<br>`databricks bundle run --target dev --profile my-profile build_silver_theater_data`<br>`databricks bundle run --target dev --profile my-profile build_denormalized_theater_sales --params="catalog=theater_analytics,schema=bronze"` |
 | **Source data** | You changed an ingest script | `databricks bundle deploy --target dev --profile my-profile`<br>`databricks bundle run --target dev --profile my-profile seed_theater_data --params="catalog=theater_analytics,schema=bronze"`<br>`databricks bundle run --target dev --profile my-profile build_denormalized_theater_sales --params="catalog=theater_analytics,schema=bronze"` |
-| **App** | Iterating on the Databricks App; Gold tables and grants already exist | `databricks bundle deploy --target dev --profile my-profile --select apps.reel_insights_app`<br>`databricks bundle run --target dev --profile my-profile reel_insights_app` |
+| **App** | Iterating on the Databricks App; Gold tables and grants already exist | Configure approver/operator variables and the runtime manifest, then deploy as described in [SETUP.md section 5](SETUP.md#5-deploy-and-start-the-reel-insights-application). Verify the active deployment before use. |
 | **Gold/app data refresh** | Bronze exists in `theater_analytics.bronze`; refresh the app's serving data | `databricks bundle deploy --target dev --profile my-profile`<br>`databricks bundle run --target dev --profile my-profile build_silver_theater_data`<br>`databricks bundle run --target dev --profile my-profile build_gold_theater_data` |
-| **Legacy dashboard cold start** | Initialize the original Bronze-based dashboard | Deploy the bundle, then run `seed_theater_data` followed by `build_denormalized_theater_sales` (same three commands as **Source data**). For the Gold app, follow [SETUP.md section 5](SETUP.md#5-deploy-and-start-the-provided-application), including feedback/grants. |
+| **Legacy dashboard cold start** | Initialize the original Bronze-based dashboard | Deploy the bundle, then run `seed_theater_data` followed by `build_denormalized_theater_sales` (same three commands as **Source data**). For the Gold app, follow [SETUP.md section 5](SETUP.md#5-deploy-and-start-the-reel-insights-application), including feedback/grants. |
 
 The Silver job currently has fixed paths: it reads `theater_analytics.bronze`
 and writes `theater_analytics.silver`, so it does not accept catalog/schema
@@ -89,8 +148,8 @@ when the app must reflect those changes.
 
 ### Run the Silver job
 
-After Bronze seeding completes, run the three source Silver notebooks in parallel,
-followed automatically by the combined Silver notebook:
+After Bronze seeding completes, the Silver job refreshes the two reference
+datasets in parallel, then loads POS and builds combined Silver:
 
 ```powershell
 databricks bundle run --target dev --profile my-profile build_silver_theater_data
@@ -194,8 +253,8 @@ Placement Matrix; revenue and showing measures remain in the performance detail.
 ### Operations quarantine recovery
 
 The app's **Quarantine operations** page is restricted
-by proxy-authenticated email to `QUARANTINE_OPERATORS`; its default is the
-configured operator in the app YAML files. Other app viewers cannot load or
+by proxy-authenticated email to `QUARANTINE_OPERATORS`; an empty allowlist denies
+all operators. Other app viewers cannot load or
 submit quarantine records, even through callbacks. Operations sees all quarantine
 records, independently of Gold sales RLS. Use POS-source/rejection-reason filters
 to narrow the latest 100 open versions; the latest 50 requests show outcomes.
@@ -265,11 +324,10 @@ are excluded from recommendation evidence; movies with null/negative measures
 in matched groups are excluded entirely. These are relative review suggestions,
 not occupancy estimates or forecasts; sales-free screen-days are unavailable.
 
-Run [`create_decision_feedback.py`](src/notebooks/create_decision_feedback.py) once
-as owner and apply the table-specific app grants using
-[`grant_app_catalog_access.py`](src/notebooks/grant_app_catalog_access.py), as
-documented in [SETUP.md](SETUP.md#6-grant-the-app-access-to-theater-tables),
-before deploying the app. Approval requires a configured leadership email from
+Run the owner-controlled [security configuration notebook](src/notebooks/configure_theater_security.py)
+after preparing the Gold and Silver tables, as documented in
+[SETUP.md](SETUP.md#6-configure-gold-row-security-and-app-access).
+Approval requires a configured leadership email from
 the authenticated Databricks Apps proxy, an explicit confirmation, and a rationale.
 Only approval writes to `theater_analytics.gold.decision_feedback`; browsing
 does not write. The audit event includes scope, period, metric evidence, approver,
@@ -292,8 +350,8 @@ Retry the same selection to avoid duplicate events; a refreshed
 review creates new IDs. Stale evidence is rechecked server-side. No schedules
 are changed automatically. Latest 20 approvals are visible after refresh.
 
-The default approver is configured in both app YAML surfaces; backend code
-denies approvals when `LEADERSHIP_APPROVERS` is empty. Gold queries and stale
+No approver is hardcoded in the repository; backend code denies approvals when
+`LEADERSHIP_APPROVERS` is empty. Gold queries and stale
 evidence checks use the proxy-forwarded user token, so Gold RLS evaluates the
 viewer. The app requests the `sql` user scope; viewers must authorize it and
 have warehouse CAN_USE, USE CATALOG/SCHEMA, and Gold SELECT permissions.
@@ -304,6 +362,20 @@ State scope is stored in `evidence_json.state`, without a feedback-table schema
 change. With a state selected, history shows approvals explicitly recorded for
 that state; older approvals without state evidence appear under All states only.
 Changing either scope requires refreshed recommendations before approval.
+
+### Gold row-level security
+
+The security notebook captures the deployed `sales_row_filter` policy. Members
+of the `theater_leadership` account group or the `gold.leadership_users` table
+can see all sales rows; other viewers see rows where their signed-in identity
+matches `manager_email` or `zone_manager_email`. The filter is attached to
+`gold.theater_daily_sales` and does not itself grant table access.
+
+`gold.decision_feedback` has **no sales row filter**: the app reads and shares
+feedback through its service principal. Leadership table/group membership,
+app approval permissions, and Operations access are separate controls. Run the
+notebook in its default inspect mode first; apply mode replaces the sales filter
+and grants configured app access only after an authorized owner reviews it.
 
 Validate the backend and Gradio callbacks locally after installing the app
 requirements:
