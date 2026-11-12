@@ -18,9 +18,10 @@ from __future__ import annotations
 import argparse
 import logging
 import random
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from pyspark.sql import Row, SparkSession
+from pyspark.sql import functions as F
 from pyspark.sql.types import (
     DoubleType,
     IntegerType,
@@ -119,7 +120,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schema", required=True)
     parser.add_argument(
         "--start-date",
-        default="2026-03-01",
+        default="2026-11-01",
         help="ISO date for the first day of generated sales (inclusive).",
     )
     parser.add_argument(
@@ -311,6 +312,8 @@ def inject_dq_issues(
 
 
 def main() -> None:
+    ingestion_timestamp = datetime.now(timezone.utc)
+    ingestion_date = ingestion_timestamp.date()
     args = parse_args()
     logging.basicConfig(
         level=args.log_level.upper(),
@@ -355,11 +358,17 @@ def main() -> None:
     inject_dq_issues(rng, rows, theater_screens)
     logger.info("Injected per-source DQ issues")
 
-    df = spark.createDataFrame(rows, schema=POS_SCHEMA)
+    df = (
+        spark.createDataFrame(rows, schema=POS_SCHEMA)
+        .withColumn("ingestion_timestamp", F.lit(ingestion_timestamp))
+        .withColumn("ingestion_date", F.lit(ingestion_date))
+    )
 
     (df.write
+       .format("delta")
        .mode("overwrite")
        .option("overwriteSchema", "true")
+       .partitionBy("ingestion_date")
        .saveAsTable(target_table))
 
     row_count = spark.table(target_table).count()

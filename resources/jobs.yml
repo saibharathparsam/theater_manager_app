@@ -64,6 +64,61 @@ resources:
           spec:
             environment_version: "5"
 
+    build_silver_theater_data:
+      name: "Build Silver Theater Data"
+      description: >-
+        Loads theater_analytics.silver from theater_analytics.bronze using the
+        three source Silver notebooks, then builds the combined Silver dataset.
+        Full-refreshes theater layout and IMDB metadata; incrementally merges POS
+        ticket sales and denormalized theater sales. Run after seeding Bronze.
+      max_concurrent_runs: 1
+      tags:
+        purpose: fde_interview_packet
+      tasks:
+        - task_key: build_silver_theater_layout
+          description: Copy the Bronze theater layout snapshot into Silver.
+          notebook_task:
+            notebook_path: ../src/notebooks/build_silver_theater_layout.py
+            source: WORKSPACE
+
+        - task_key: build_silver_imdb_metadata
+          description: Refresh Silver movie metadata with release_date as DATE.
+          notebook_task:
+            notebook_path: ../src/notebooks/build_silver_imdb_metadata.py
+            source: WORKSPACE
+
+        - task_key: build_silver_pos_ticket_sales
+          description: Incrementally merge normalized POS sales and quarantine invalid rows.
+          notebook_task:
+            notebook_path: ../src/notebooks/build_silver_pos_ticket_sales.py
+            source: WORKSPACE
+
+        - task_key: build_silver_denormalized_theater_sales
+          description: Left-join all Silver sources and incrementally merge the Gold-ready dataset.
+          depends_on:
+            - task_key: build_silver_theater_layout
+            - task_key: build_silver_imdb_metadata
+            - task_key: build_silver_pos_ticket_sales
+          notebook_task:
+            notebook_path: ../src/notebooks/build_silver_denormalized_theater_sales.py
+            source: WORKSPACE
+
+    build_gold_theater_data:
+      name: "Build Gold Theater Data"
+      description: >-
+        Full-refreshes theater_analytics.gold.theater_daily_sales by aggregating
+        Silver POS sales before left-joining Silver theater layout and IMDB
+        metadata. Run after the Silver job succeeds; requires TIME-capable serverless compute.
+      max_concurrent_runs: 1
+      tags:
+        purpose: fde_interview_packet
+      tasks:
+        - task_key: build_gold_theater_daily_sales
+          description: Aggregate daily sales and enrich with Silver reference attributes.
+          notebook_task:
+            notebook_path: ../src/notebooks/build_gold_theater_daily_sales.py
+            source: WORKSPACE
+
     build_denormalized_theater_sales:
       name: "Build Denormalized Theater Sales"
       description: >-

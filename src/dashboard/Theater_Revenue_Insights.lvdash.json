@@ -1,0 +1,3020 @@
+{
+  "datasets": [
+    {
+      "name": "approved_decisions",
+      "displayName": "Approved leadership decisions",
+      "catalog": "theater_analytics",
+      "schema": "gold",
+      "queryLines": [
+        "SELECT decision_id, approved_at, CAST(approved_at AS DATE) AS approval_date,\n",
+        "       movie_id, movie_title, action,\n",
+        "       CASE WHEN theater_id = '' THEN 'All theaters' ELSE theater_id END AS theater_scope,\n",
+        "       period_start, period_end, approver_email, approval_note,\n",
+        "       source_table, evidence_json\n",
+        "FROM decision_feedback\n",
+        "ORDER BY approved_at DESC, decision_id DESC\n"
+      ]
+    },
+    {
+      "name": "theater_sales_metrics",
+      "displayName": "Theater Sales Metrics",
+      "config": {
+        "source": "theater_analytics.gold.theater_daily_sales",
+        "measures": [
+          {
+            "name": "total_revenue",
+            "expr": "SUM(revenue)"
+          },
+          {
+            "name": "seats_sold",
+            "expr": "SUM(seats_sold)"
+          },
+          {
+            "name": "avg_ticket_price",
+            "expr": "SUM(revenue) / SUM(seats_sold)"
+          },
+          {
+            "name": "occupancy",
+            "expr": "SUM(seats_sold) / SUM(total_seats)",
+            "format": {
+              "type": "percentage",
+              "decimalPlaces": {
+                "type": "exact",
+                "places": 1.0
+              }
+            }
+          },
+          {
+            "name": "visible_rows",
+            "expr": "COUNT(*)"
+          },
+          {
+            "name": "theaters_visible",
+            "expr": "COUNT(DISTINCT theater_id)"
+          },
+          {
+            "name": "total_theaters",
+            "expr": "COUNT(DISTINCT theater_id)"
+          },
+          {
+            "name": "total_screens",
+            "expr": "COUNT(DISTINCT screen_id)"
+          },
+          {
+            "name": "total_movies",
+            "expr": "COUNT(DISTINCT CASE WHEN TRIM(movie_id) <> '' AND LOWER(TRIM(movie_id)) <> 'unknown' THEN movie_id END)"
+          },
+          {
+            "name": "showings",
+            "expr": "COUNT(*)"
+          },
+          {
+            "name": "revenue_per_showing",
+            "expr": "SUM(revenue) / COUNT(*)"
+          }
+        ],
+        "version": "1.1",
+        "comment": "Theater daily sales metrics for March 2026. Row-level security is enforced by the underlying table's row filter (theater managers see their theater, zone managers see their zone, leadership sees all).",
+        "dimensions": [
+          {
+            "name": "show_date",
+            "expr": "show_date"
+          },
+          {
+            "name": "movie_title",
+            "expr": "movie_title"
+          },
+          {
+            "name": "movie_id",
+            "expr": "movie_id"
+          },
+          {
+            "name": "genre",
+            "expr": "genre"
+          },
+          {
+            "name": "format",
+            "expr": "format"
+          },
+          {
+            "name": "state",
+            "expr": "state"
+          },
+          {
+            "name": "city",
+            "expr": "city"
+          },
+          {
+            "name": "screen_type",
+            "expr": "screen_type"
+          },
+          {
+            "name": "theater_name",
+            "expr": "theater_name"
+          },
+          {
+            "name": "mpaa_rating",
+            "expr": "mpaa_rating"
+          },
+          {
+            "name": "viewer",
+            "expr": "session_user()"
+          },
+          {
+            "name": "manager_email",
+            "expr": "manager_email"
+          },
+          {
+            "name": "zone_manager_email",
+            "expr": "zone_manager_email"
+          },
+          {
+            "name": "theater",
+            "expr": "concat(theater_name, ' (', theater_id, ')')"
+          }
+        ]
+      }
+    }
+  ],
+  "pages": [
+    {
+      "name": "approved_decisions_page",
+      "displayName": "Approved decisions",
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1",
+      "layout": [
+        {
+          "widget": {
+            "name": "decisions_header",
+            "multilineTextboxSpec": {
+              "lines": [
+                "## Approved leadership decisions\n",
+                "\n",
+                "Source: `theater_analytics.gold.decision_feedback`. Approval dates refer to when leadership approved; sales-period dates refer to the reviewed evidence. This page is independent of the sales-page filters. Approval records decisions only, not schedule changes. Empty results mean no recorded approvals match the filters. Run the feedback setup notebook and grant the dashboard query identity SELECT before using this page. Access to this audit table is separate from sales-table row filters."
+              ]
+            }
+          },
+          "position": {"x": 0, "y": 0, "width": 12, "height": 3}
+        },
+        {
+          "widget": {
+            "name": "decisions_approval_date_filter",
+            "queries": [{
+              "name": "approval_date_query",
+              "query": {
+                "datasetName": "approved_decisions",
+                "fields": [{"name": "approval_date", "expression": "`approval_date`"}],
+                "disaggregated": false
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-date-range-picker",
+              "frame": {"showTitle": true, "title": "Approval date"},
+              "encodings": {
+                "fields": [{
+                  "fieldName": "approval_date",
+                  "queryName": "approval_date_query"
+                }]
+              }
+            }
+          },
+          "position": {"x": 0, "y": 3, "width": 4, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "decisions_action_filter",
+            "queries": [{
+              "name": "action_query",
+              "query": {
+                "datasetName": "approved_decisions",
+                "fields": [{"name": "action", "expression": "`action`"}],
+                "disaggregated": false
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "frame": {"showTitle": true, "title": "Approved action"},
+              "encodings": {
+                "fields": [{
+                  "fieldName": "action",
+                  "queryName": "action_query"
+                }]
+              }
+            }
+          },
+          "position": {"x": 4, "y": 3, "width": 4, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "decisions_scope_filter",
+            "queries": [{
+              "name": "scope_query",
+              "query": {
+                "datasetName": "approved_decisions",
+                "fields": [{"name": "theater_scope", "expression": "`theater_scope`"}],
+                "disaggregated": false
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "frame": {"showTitle": true, "title": "Theater scope"},
+              "encodings": {
+                "fields": [{
+                  "fieldName": "theater_scope",
+                  "queryName": "scope_query"
+                }]
+              }
+            }
+          },
+          "position": {"x": 8, "y": 3, "width": 4, "height": 2}
+        },
+        {
+          "widget": {
+            "name": "approved_decisions_table",
+            "queries": [{
+              "name": "main_query",
+              "query": {
+                "datasetName": "approved_decisions",
+                "fields": [
+                  {"name": "approved_at", "expression": "`approved_at`"},
+                  {"name": "action", "expression": "`action`"},
+                  {"name": "movie_title", "expression": "`movie_title`"},
+                  {"name": "movie_id", "expression": "`movie_id`"},
+                  {"name": "theater_scope", "expression": "`theater_scope`"},
+                  {"name": "period_start", "expression": "`period_start`"},
+                  {"name": "period_end", "expression": "`period_end`"},
+                  {"name": "approver_email", "expression": "`approver_email`"},
+                  {"name": "approval_note", "expression": "`approval_note`"},
+                  {"name": "decision_id", "expression": "`decision_id`"},
+                  {"name": "source_table", "expression": "`source_table`"},
+                  {"name": "evidence_json", "expression": "`evidence_json`"}
+                ],
+                "orders": [
+                  {"direction": "DESC", "expression": "`approved_at`"},
+                  {"direction": "DESC", "expression": "`decision_id`"}
+                ],
+                "disaggregated": true
+              }
+            }],
+            "spec": {
+              "version": 2,
+              "widgetType": "table",
+              "frame": {"showTitle": true, "title": "Recorded approvals and evidence"},
+              "encodings": {
+                "columns": [
+                  {"fieldName": "approved_at", "displayName": "Approved at"},
+                  {"fieldName": "action", "displayName": "Action"},
+                  {"fieldName": "movie_title", "displayName": "Movie"},
+                  {"fieldName": "movie_id", "displayName": "Movie ID"},
+                  {"fieldName": "theater_scope", "displayName": "Theater scope"},
+                  {"fieldName": "period_start", "displayName": "Sales period start"},
+                  {"fieldName": "period_end", "displayName": "Sales period end"},
+                  {"fieldName": "approver_email", "displayName": "Approver"},
+                  {"fieldName": "approval_note", "displayName": "Leadership rationale"},
+                  {"fieldName": "decision_id", "displayName": "Decision ID"},
+                  {"fieldName": "source_table", "displayName": "Evidence source"},
+                  {"fieldName": "evidence_json", "displayName": "Metric evidence (JSON)"}
+                ]
+              },
+              "data": {"queryName": "main_query"}
+            }
+          },
+          "position": {"x": 0, "y": 5, "width": 12, "height": 10}
+        }
+      ]
+    },
+    {
+      "name": "01c0b47d",
+      "displayName": "Overall performance",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter_show_date",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_show_date",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "show_date",
+                      "expression": "`show_date`"
+                    },
+                    {
+                      "name": "show_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Show Date"
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "show_date",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_show_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_genre",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_genre",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "genre",
+                      "expression": "`genre`"
+                    },
+                    {
+                      "name": "genre_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Genre"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "genre",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_genre"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_format",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_format",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "format",
+                      "expression": "`format`"
+                    },
+                    {
+                      "name": "format_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Format"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "format",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_format"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_state",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_state",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "state_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "State"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "state",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_state"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Revenue"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(total_revenue)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_seats_sold",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(seats_sold)",
+                      "expression": "MEASURE(`seats_sold`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Seats Sold"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(seats_sold)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_occupancy",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(occupancy)",
+                      "expression": "MEASURE(`occupancy`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Occupancy Rate"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(occupancy)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 10,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "line_daily_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "show_date",
+                      "expression": "`show_date`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Daily Revenue Trend"
+              },
+              "version": 3,
+              "widgetType": "line",
+              "encodings": {
+                "x": {
+                  "fieldName": "show_date",
+                  "displayName": "show_date",
+                  "scale": {
+                    "type": "temporal"
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(total_revenue)",
+                  "displayName": "total_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 8,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_price_by_format",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "format",
+                      "expression": "`format`"
+                    },
+                    {
+                      "name": "measure(avg_ticket_price)",
+                      "expression": "MEASURE(`avg_ticket_price`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Ticket Price by Format"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "format",
+                  "displayName": "format",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(avg_ticket_price)",
+                  "displayName": "avg_ticket_price",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "format",
+                  "displayName": "format",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 6,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_top_movies",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "genre",
+                      "expression": "`genre`"
+                    },
+                    {
+                      "name": "movie_title",
+                      "expression": "`movie_title`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Movies by Revenue"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "movie_title",
+                  "displayName": "movie_title",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "number": 10,
+                      "type": "number-of-categories"
+                    },
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(total_revenue)",
+                  "displayName": "total_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "genre",
+                  "displayName": "genre",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_revenue_by_genre",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "genre",
+                      "expression": "`genre`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Genre (Top 10)"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "genre",
+                  "displayName": "genre",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "number": 10,
+                      "type": "number-of-categories"
+                    },
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(total_revenue)",
+                  "displayName": "total_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "genre",
+                  "displayName": "genre",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 12,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_revenue_by_state",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by State (Top 10)"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "state",
+                  "displayName": "state",
+                  "scale": {
+                    "type": "categorical",
+                    "categorySize": {
+                      "number": 10,
+                      "type": "number-of-categories"
+                    },
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(total_revenue)",
+                  "displayName": "total_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "state",
+                  "displayName": "state",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 8,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "pie_screen_type",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    },
+                    {
+                      "name": "screen_type",
+                      "expression": "`screen_type`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue by Screen Type"
+              },
+              "version": 3,
+              "widgetType": "pie",
+              "encodings": {
+                "angle": {
+                  "fieldName": "measure(total_revenue)",
+                  "scale": {
+                    "type": "quantitative"
+                  },
+                  "displayName": "total_revenue"
+                },
+                "color": {
+                  "fieldName": "screen_type",
+                  "displayName": "screen_type",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 18,
+            "width": 4,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "text_key_insights",
+            "spec": {
+              "widgetType": "text",
+              "version": 1,
+              "encodings": {
+                "text": {
+                  "lines": [
+                    "### Key insights\n",
+                    "* **IMAX premium is the biggest lever** — IMAX tickets average $16.81 vs $12.29 for Standard (+37%), yet IMAX is only ~7% of showings.\n",
+                    "* **Ratings don't sell tickets** — IMDb rating vs revenue correlation is ~0.05; avg revenue per screen-day is flat across rating buckets. Program on genre mix, not ratings.\n",
+                    "* **No weekend effect** — avg revenue per screen-day is ~$35–36 every day of the week.\n",
+                    "* **Geography is concentrated** — CA and TX drive ~27% of total revenue.\n",
+                    "* **Data quality** — ~1% of rows have a null show date, ~2.7K rows lack seat capacity, and 185 theaters have an 'Unknown' zone manager.\n",
+                    "* **Privacy note** — row-level security applies: each viewer sees only their authorized theaters."
+                  ],
+                  "fields": []
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 36,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "table_rls_proof",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "viewer",
+                      "expression": "`viewer`"
+                    },
+                    {
+                      "name": "measure(visible_rows)",
+                      "expression": "MEASURE(`visible_rows`)"
+                    },
+                    {
+                      "name": "measure(theaters_visible)",
+                      "expression": "MEASURE(`theaters_visible`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "My Access (Row-Level Security Proof)"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "viewer"
+                  },
+                  {
+                    "fieldName": "measure(visible_rows)"
+                  },
+                  {
+                    "fieldName": "measure(theaters_visible)"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            },
+            "filterSources": {
+              "mode": "EXCLUDE",
+              "page": {
+                "all": true
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 41,
+            "width": 12,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_manager_email",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_manager_email",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "manager_email",
+                      "expression": "`manager_email`"
+                    },
+                    {
+                      "name": "manager_email_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Theater Manager"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "manager_email",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_manager_email"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_zone_manager",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_zone_manager_email",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "zone_manager_email",
+                      "expression": "`zone_manager_email`"
+                    },
+                    {
+                      "name": "zone_manager_email_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Zone Manager"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "zone_manager_email",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_zone_manager_email"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_bottom_movies",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "genre",
+                      "expression": "`genre`"
+                    },
+                    {
+                      "name": "movie_title",
+                      "expression": "`movie_title`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`movie_title` NOT IN ('Unknown')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Bottom 5 Movies by Revenue",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "movie_title",
+                  "displayName": "movie_title",
+                  "scale": {
+                    "categorySize": {
+                      "number": 5,
+                      "type": "number-of-categories"
+                    },
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(total_revenue)",
+                  "displayName": "total_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "genre",
+                  "displayName": "genre",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 24,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_bottom_genres",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "genre",
+                      "expression": "`genre`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`genre` NOT IN ('Unknown')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Bottom 5 Genres by Revenue"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "genre",
+                  "displayName": "genre",
+                  "scale": {
+                    "categorySize": {
+                      "number": 5,
+                      "type": "number-of-categories"
+                    },
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(total_revenue)",
+                  "displayName": "total_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "genre",
+                  "displayName": "genre",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 24,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_top_theaters",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "theater",
+                      "expression": "`theater`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Top 5 Theaters by Revenue"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "theater",
+                  "displayName": "theater",
+                  "scale": {
+                    "categorySize": {
+                      "number": 5,
+                      "type": "number-of-categories"
+                    },
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(total_revenue)",
+                  "displayName": "total_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "theater",
+                  "displayName": "theater",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 30,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_bottom_theaters",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "theater",
+                      "expression": "`theater`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "filters": [
+                    {
+                      "expression": "`theater_name` NOT IN ('Unknown')"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Bottom 5 Theaters by Revenue",
+                  "fields": []
+                }
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "theater",
+                  "displayName": "theater",
+                  "scale": {
+                    "categorySize": {
+                      "number": 5,
+                      "type": "number-of-categories"
+                    },
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(total_revenue)",
+                  "displayName": "total_revenue",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "theater",
+                  "displayName": "theater",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 30,
+            "width": 6,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_screens",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(total_screens)",
+                      "expression": "MEASURE(`total_screens`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Screens"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(total_screens)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_theaters",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(total_theaters)",
+                      "expression": "MEASURE(`total_theaters`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Theaters"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(total_theaters)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "by_movie",
+      "displayName": "By Movie",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter_show_date",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_show_date",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "show_date",
+                      "expression": "`show_date`"
+                    },
+                    {
+                      "name": "show_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Show Date"
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "show_date",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_show_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_genre",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_genre",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "genre",
+                      "expression": "`genre`"
+                    },
+                    {
+                      "name": "genre_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Genre"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "genre",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_genre"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_format",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_format",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "format",
+                      "expression": "`format`"
+                    },
+                    {
+                      "name": "format_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Format"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "format",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_format"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_state",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_state",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "state_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "State"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "state",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_state"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_manager_email",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_manager_email",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "manager_email",
+                      "expression": "`manager_email`"
+                    },
+                    {
+                      "name": "manager_email_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Theater Manager"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "manager_email",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_manager_email"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_zone_manager",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_zone_manager_email",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "zone_manager_email",
+                      "expression": "`zone_manager_email`"
+                    },
+                    {
+                      "name": "zone_manager_email_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Zone Manager"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "zone_manager_email",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_zone_manager_email"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_movie",
+            "queries": [
+              {
+                "name": "movie_filter_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "movie_title",
+                      "expression": "`movie_title`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "frame": {
+                "showTitle": true,
+                "title": "Movie"
+              },
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "movie_title",
+                    "displayName": "Movie",
+                    "queryName": "movie_filter_query"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_movies",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(total_movies)",
+                      "expression": "MEASURE(`total_movies`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Distinct Movies Played",
+                "showDescription": true,
+                "description": "Distinct known movie IDs in Gold sales for the selected filters and dates; not a live schedule."
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(total_movies)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_revenue_per_showing",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(revenue_per_showing)",
+                      "expression": "MEASURE(`revenue_per_showing`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Revenue per Showing"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(revenue_per_showing)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 6,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_ticket_price",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(avg_ticket_price)",
+                      "expression": "MEASURE(`avg_ticket_price`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Ticket Price"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(avg_ticket_price)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 6,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_occupancy",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(occupancy)",
+                      "expression": "MEASURE(`occupancy`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Occupancy Rate"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(occupancy)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 6,
+            "width": 3,
+            "height": 3
+          }
+        },
+        {
+          "widget": {
+            "name": "text_movie_guide",
+            "multilineTextboxSpec": {
+              "lines": [
+                "### How to use this page\n",
+                "\n",
+                "* **Movie filter**: select one or more titles to filter the count, performance views, and theater/state listings together.\n",
+                "* **Distinct Movies Played**: counts distinct known movie IDs in Gold sales within the selected dates and filters, not current schedules. Repeated sales across days, formats, screens, or theaters do not increase the count.\n",
+                "* **Movie theaters and states**: one row per movie ID, theater, and state with sales in the selected scope. The theater label includes its ID to distinguish repeated names.\n",
+                "* **Existing performance metrics**: Revenue per Showing uses daily Gold row counts, not scheduled screenings; Occupancy Rate lacks a screening-level capacity denominator. Do not treat either as proof to change schedules.\n",
+                "* All views respect the Gold row filter and the dashboard's execution identity."
+              ]
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 29,
+            "width": 12,
+            "height": 5
+          }
+        },
+        {
+          "widget": {
+            "name": "table_movie_locations",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "movie_id",
+                      "expression": "`movie_id`"
+                    },
+                    {
+                      "name": "movie_title",
+                      "expression": "`movie_title`"
+                    },
+                    {
+                      "name": "theater",
+                      "expression": "`theater`"
+                    },
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    }
+                  ],
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "ASC",
+                      "expression": "`movie_title`"
+                    },
+                    {
+                      "direction": "ASC",
+                      "expression": "`movie_id`"
+                    },
+                    {
+                      "direction": "ASC",
+                      "expression": "`state`"
+                    },
+                    {
+                      "direction": "ASC",
+                      "expression": "`theater`"
+                    }
+                  ]
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Movie Theaters and States",
+                "showDescription": true,
+                "description": "Locations with Gold sales in the selected dates and filters; not a current screening schedule."
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "movie_id",
+                    "displayName": "Movie ID"
+                  },
+                  {
+                    "fieldName": "movie_title",
+                    "displayName": "Movie"
+                  },
+                  {
+                    "fieldName": "theater",
+                    "displayName": "Theater (ID)"
+                  },
+                  {
+                    "fieldName": "state",
+                    "displayName": "State"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 21,
+            "width": 12,
+            "height": 8
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_rev_per_showing",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "genre",
+                      "expression": "`genre`"
+                    },
+                    {
+                      "name": "movie_title",
+                      "expression": "`movie_title`"
+                    },
+                    {
+                      "name": "measure(revenue_per_showing)",
+                      "expression": "MEASURE(`revenue_per_showing`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Movies by Revenue per Showing"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "movie_title",
+                  "displayName": "movie_title",
+                  "scale": {
+                    "categorySize": {
+                      "number": 10,
+                      "type": "number-of-categories"
+                    },
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(revenue_per_showing)",
+                  "displayName": "revenue_per_showing",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "genre",
+                  "displayName": "genre",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 9,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "table_movie_detail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "movie_title",
+                      "expression": "`movie_title`"
+                    },
+                    {
+                      "name": "genre",
+                      "expression": "`genre`"
+                    },
+                    {
+                      "name": "mpaa_rating",
+                      "expression": "`mpaa_rating`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    },
+                    {
+                      "name": "measure(revenue_per_showing)",
+                      "expression": "MEASURE(`revenue_per_showing`)"
+                    },
+                    {
+                      "name": "measure(seats_sold)",
+                      "expression": "MEASURE(`seats_sold`)"
+                    },
+                    {
+                      "name": "measure(occupancy)",
+                      "expression": "MEASURE(`occupancy`)"
+                    },
+                    {
+                      "name": "measure(showings)",
+                      "expression": "MEASURE(`showings`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Movie Performance Detail"
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "movie_title"
+                  },
+                  {
+                    "fieldName": "genre"
+                  },
+                  {
+                    "fieldName": "mpaa_rating"
+                  },
+                  {
+                    "fieldName": "measure(total_revenue)"
+                  },
+                  {
+                    "fieldName": "measure(revenue_per_showing)"
+                  },
+                  {
+                    "fieldName": "measure(seats_sold)"
+                  },
+                  {
+                    "fieldName": "measure(occupancy)"
+                  },
+                  {
+                    "fieldName": "measure(showings)"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 15,
+            "width": 12,
+            "height": 6
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    },
+    {
+      "name": "by_theater",
+      "displayName": "By Theater",
+      "layout": [
+        {
+          "widget": {
+            "name": "filter_show_date",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_show_date",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "show_date",
+                      "expression": "`show_date`"
+                    },
+                    {
+                      "name": "show_date_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Show Date"
+              },
+              "widgetType": "filter-date-range-picker",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "show_date",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_show_date"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 0,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_format",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_format",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "format",
+                      "expression": "`format`"
+                    },
+                    {
+                      "name": "format_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Format"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "format",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_format"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 0,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_state",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_state",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "state_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "State"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "state",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_state"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 8,
+            "y": 0,
+            "width": 4,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_manager_email",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_manager_email",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "manager_email",
+                      "expression": "`manager_email`"
+                    },
+                    {
+                      "name": "manager_email_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Theater Manager"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "manager_email",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_manager_email"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 2,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "filter_zone_manager",
+            "queries": [
+              {
+                "name": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_zone_manager_email",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "zone_manager_email",
+                      "expression": "`zone_manager_email`"
+                    },
+                    {
+                      "name": "zone_manager_email_associativity",
+                      "expression": "COUNT_IF(`associative_filter_predicate_group`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "frame": {
+                "showTitle": true,
+                "title": "Zone Manager"
+              },
+              "widgetType": "filter-multi-select",
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "zone_manager_email",
+                    "queryName": "dashboards/01f1dd9e4c3117b284e327b8b52fb2a4/datasets/01f1dd9f0f561ecabcb0a5063a5e8a0a_zone_manager_email"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 6,
+            "y": 2,
+            "width": 6,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_revenue",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Revenue"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(total_revenue)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_avg_ticket_price",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(avg_ticket_price)",
+                      "expression": "MEASURE(`avg_ticket_price`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Avg Ticket Price"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(avg_ticket_price)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 5,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_occupancy",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(occupancy)",
+                      "expression": "MEASURE(`occupancy`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Occupancy Rate"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(occupancy)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 7,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "table_theater_detail",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "theater",
+                      "expression": "`theater`"
+                    },
+                    {
+                      "name": "state",
+                      "expression": "`state`"
+                    },
+                    {
+                      "name": "city",
+                      "expression": "`city`"
+                    },
+                    {
+                      "name": "measure(total_revenue)",
+                      "expression": "MEASURE(`total_revenue`)"
+                    },
+                    {
+                      "name": "measure(seats_sold)",
+                      "expression": "MEASURE(`seats_sold`)"
+                    },
+                    {
+                      "name": "measure(occupancy)",
+                      "expression": "MEASURE(`occupancy`)"
+                    },
+                    {
+                      "name": "measure(avg_ticket_price)",
+                      "expression": "MEASURE(`avg_ticket_price`)"
+                    },
+                    {
+                      "name": "measure(total_screens)",
+                      "expression": "MEASURE(`total_screens`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": {
+                  "value": "Theater Performance Detail",
+                  "fields": []
+                }
+              },
+              "version": 2,
+              "widgetType": "table",
+              "encodings": {
+                "columns": [
+                  {
+                    "fieldName": "theater"
+                  },
+                  {
+                    "fieldName": "state"
+                  },
+                  {
+                    "fieldName": "city"
+                  },
+                  {
+                    "fieldName": "measure(total_revenue)"
+                  },
+                  {
+                    "fieldName": "measure(seats_sold)"
+                  },
+                  {
+                    "fieldName": "measure(occupancy)"
+                  },
+                  {
+                    "fieldName": "measure(avg_ticket_price)"
+                  },
+                  {
+                    "fieldName": "measure(total_screens)"
+                  }
+                ]
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 12,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_seats_sold",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(seats_sold)",
+                      "expression": "MEASURE(`seats_sold`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Seats Sold"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(seats_sold)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 3,
+            "y": 4,
+            "width": 2,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_screens",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "measure(total_screens)",
+                      "expression": "MEASURE(`total_screens`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Total Screens"
+              },
+              "version": 2,
+              "widgetType": "counter",
+              "encodings": {
+                "value": {
+                  "fieldName": "measure(total_screens)",
+                  "rowNumber": 0
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 9,
+            "y": 4,
+            "width": 3,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "bar_top_seats",
+            "queries": [
+              {
+                "name": "main_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "theater",
+                      "expression": "`theater`"
+                    },
+                    {
+                      "name": "measure(seats_sold)",
+                      "expression": "MEASURE(`seats_sold`)"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "frame": {
+                "showTitle": true,
+                "title": "Top 10 Theaters by Seats Sold"
+              },
+              "version": 3,
+              "widgetType": "bar",
+              "encodings": {
+                "x": {
+                  "fieldName": "theater",
+                  "displayName": "theater",
+                  "scale": {
+                    "categorySize": {
+                      "number": 10,
+                      "type": "number-of-categories"
+                    },
+                    "type": "categorical",
+                    "sort": {
+                      "by": "y-reversed"
+                    }
+                  }
+                },
+                "y": {
+                  "fieldName": "measure(seats_sold)",
+                  "displayName": "seats_sold",
+                  "scale": {
+                    "type": "quantitative"
+                  }
+                },
+                "color": {
+                  "fieldName": "theater",
+                  "displayName": "theater",
+                  "scale": {
+                    "type": "categorical"
+                  }
+                }
+              },
+              "data": {
+                "queryName": "main_query"
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 6,
+            "width": 12,
+            "height": 6
+          }
+        },
+        {
+          "widget": {
+            "name": "text_theater_guide",
+            "spec": {
+              "widgetType": "text",
+              "version": 1,
+              "encodings": {
+                "text": {
+                  "fields": [],
+                  "lines": [
+                    "### How to use this page\n",
+                    "\n",
+                    "* **Pricing vs occupancy matrix** (top left): each bubble is a theater. High occupancy + low avg ticket price → pricing power; test premium pricing or premium (IMAX) formats. Low occupancy + high price → consider promotions or reprogramming.\n",
+                    "* **Top 10 by seats sold / occupancy**: volume and fill-rate leaders — compare their format and screen mix.\n",
+                    "* **Revenue by state x screen type**: where premium screens pay off by region — useful for IMAX conversion planning.\n",
+                    "* **Detail table**: click any column header to sort. All views respect row-level security — you only see data for your authorized theaters."
+                  ]
+                }
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 18,
+            "width": 12,
+            "height": 5
+          }
+        }
+      ],
+      "pageType": "PAGE_TYPE_CANVAS",
+      "layoutVersion": "GRID_V1"
+    }
+  ],
+  "uiSettings": {
+    "theme": {
+      "widgetHeaderAlignment": "ALIGNMENT_UNSPECIFIED"
+    },
+    "applyModeEnabled": false
+  }
+}

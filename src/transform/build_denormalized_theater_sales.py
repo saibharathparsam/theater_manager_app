@@ -57,6 +57,8 @@ SELECT
   l.theater_name,
   l.city,
   l.state,
+  l.manager_email,
+  l.zone_manager_email,
   l.open_time,
   l.close_time,
   s.screen_id,
