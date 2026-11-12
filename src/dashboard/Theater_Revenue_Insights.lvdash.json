@@ -61,6 +61,10 @@
             "expr": "COUNT(DISTINCT screen_id)"
           },
           {
+            "name": "total_movies",
+            "expr": "COUNT(DISTINCT CASE WHEN TRIM(movie_id) <> '' AND LOWER(TRIM(movie_id)) <> 'unknown' THEN movie_id END)"
+          },
+          {
             "name": "showings",
             "expr": "COUNT(*)"
           },
@@ -79,6 +83,10 @@
           {
             "name": "movie_title",
             "expr": "movie_title"
+          },
+          {
+            "name": "movie_id",
+            "expr": "movie_id"
           },
           {
             "name": "genre",
@@ -1856,7 +1864,50 @@
         },
         {
           "widget": {
-            "name": "kpi_total_revenue",
+            "name": "filter_movie",
+            "queries": [
+              {
+                "name": "movie_filter_query",
+                "query": {
+                  "datasetName": "theater_sales_metrics",
+                  "fields": [
+                    {
+                      "name": "movie_title",
+                      "expression": "`movie_title`"
+                    }
+                  ],
+                  "disaggregated": false
+                }
+              }
+            ],
+            "spec": {
+              "version": 2,
+              "widgetType": "filter-multi-select",
+              "frame": {
+                "showTitle": true,
+                "title": "Movie"
+              },
+              "encodings": {
+                "fields": [
+                  {
+                    "fieldName": "movie_title",
+                    "displayName": "Movie",
+                    "queryName": "movie_filter_query"
+                  }
+                ]
+              }
+            }
+          },
+          "position": {
+            "x": 0,
+            "y": 4,
+            "width": 12,
+            "height": 2
+          }
+        },
+        {
+          "widget": {
+            "name": "kpi_total_movies",
             "queries": [
               {
                 "name": "main_query",
@@ -1864,8 +1915,8 @@
                   "datasetName": "theater_sales_metrics",
                   "fields": [
                     {
-                      "name": "measure(total_revenue)",
-                      "expression": "MEASURE(`total_revenue`)"
+                      "name": "measure(total_movies)",
+                      "expression": "MEASURE(`total_movies`)"
                     }
                   ],
                   "disaggregated": false
@@ -1875,13 +1926,15 @@
             "spec": {
               "frame": {
                 "showTitle": true,
-                "title": "Total Revenue"
+                "title": "Distinct Movies Played",
+                "showDescription": true,
+                "description": "Distinct known movie IDs in Gold sales for the selected filters and dates; not a live schedule."
               },
               "version": 2,
               "widgetType": "counter",
               "encodings": {
                 "value": {
-                  "fieldName": "measure(total_revenue)",
+                  "fieldName": "measure(total_movies)",
                   "rowNumber": 0
                 }
               },
@@ -1892,52 +1945,9 @@
           },
           "position": {
             "x": 0,
-            "y": 4,
+            "y": 6,
             "width": 3,
-            "height": 2
-          }
-        },
-        {
-          "widget": {
-            "name": "kpi_showings",
-            "queries": [
-              {
-                "name": "main_query",
-                "query": {
-                  "datasetName": "theater_sales_metrics",
-                  "fields": [
-                    {
-                      "name": "measure(showings)",
-                      "expression": "MEASURE(`showings`)"
-                    }
-                  ],
-                  "disaggregated": false
-                }
-              }
-            ],
-            "spec": {
-              "frame": {
-                "showTitle": true,
-                "title": "Showings"
-              },
-              "version": 2,
-              "widgetType": "counter",
-              "encodings": {
-                "value": {
-                  "fieldName": "measure(showings)",
-                  "rowNumber": 0
-                }
-              },
-              "data": {
-                "queryName": "main_query"
-              }
-            }
-          },
-          "position": {
-            "x": 3,
-            "y": 4,
-            "width": 2,
-            "height": 2
+            "height": 3
           }
         },
         {
@@ -1977,10 +1987,10 @@
             }
           },
           "position": {
-            "x": 5,
-            "y": 4,
+            "x": 3,
+            "y": 6,
             "width": 3,
-            "height": 2
+            "height": 3
           }
         },
         {
@@ -2020,10 +2030,10 @@
             }
           },
           "position": {
-            "x": 8,
-            "y": 4,
-            "width": 2,
-            "height": 2
+            "x": 6,
+            "y": 6,
+            "width": 3,
+            "height": 3
           }
         },
         {
@@ -2063,43 +2073,37 @@
             }
           },
           "position": {
-            "x": 10,
-            "y": 4,
-            "width": 2,
-            "height": 2
+            "x": 9,
+            "y": 6,
+            "width": 3,
+            "height": 3
           }
         },
         {
           "widget": {
             "name": "text_movie_guide",
-            "spec": {
-              "widgetType": "text",
-              "version": 1,
-              "encodings": {
-                "text": {
-                  "lines": [
-                    "### How to use this page\n",
-                    "\n",
-                    "* **Placement matrix** (top left): each bubble is a movie. High revenue-per-showing + low occupancy → schedule more showings or move to a bigger screen. High occupancy + low revenue-per-showing → raise price or move the title to a premium (IMAX) auditorium.\n",
-                    "* **Revenue per showing (Top 10)**: the most valuable screenings in your scope — under-screened hits that deserve prime-time slots on your best screens.\n",
-                    "* **Detail table**: click any column header to sort. Occupancy = seats sold ÷ capacity.\n",
-                    "* All views respect row-level security — you only see data for your authorized theaters."
-                  ],
-                  "fields": []
-                }
-              }
+            "multilineTextboxSpec": {
+              "lines": [
+                "### How to use this page\n",
+                "\n",
+                "* **Movie filter**: select one or more titles to filter the count, performance views, and theater/state listings together.\n",
+                "* **Distinct Movies Played**: counts distinct known movie IDs in Gold sales within the selected dates and filters, not current schedules. Repeated sales across days, formats, screens, or theaters do not increase the count.\n",
+                "* **Movie theaters and states**: one row per movie ID, theater, and state with sales in the selected scope. The theater label includes its ID to distinguish repeated names.\n",
+                "* **Existing performance metrics**: Revenue per Showing uses daily Gold row counts, not scheduled screenings; Occupancy Rate lacks a screening-level capacity denominator. Do not treat either as proof to change schedules.\n",
+                "* All views respect the Gold row filter and the dashboard's execution identity."
+              ]
             }
           },
           "position": {
             "x": 0,
-            "y": 18,
+            "y": 29,
             "width": 12,
             "height": 5
           }
         },
         {
           "widget": {
-            "name": "scatter_placement",
+            "name": "table_movie_locations",
             "queries": [
               {
                 "name": "main_query",
@@ -2107,62 +2111,72 @@
                   "datasetName": "theater_sales_metrics",
                   "fields": [
                     {
-                      "name": "genre",
-                      "expression": "`genre`"
+                      "name": "movie_id",
+                      "expression": "`movie_id`"
                     },
                     {
-                      "name": "measure(total_revenue)",
-                      "expression": "MEASURE(`total_revenue`)"
+                      "name": "movie_title",
+                      "expression": "`movie_title`"
                     },
                     {
-                      "name": "measure(revenue_per_showing)",
-                      "expression": "MEASURE(`revenue_per_showing`)"
+                      "name": "theater",
+                      "expression": "`theater`"
                     },
                     {
-                      "name": "measure(occupancy)",
-                      "expression": "MEASURE(`occupancy`)"
+                      "name": "state",
+                      "expression": "`state`"
                     }
                   ],
-                  "disaggregated": false
+                  "disaggregated": false,
+                  "orders": [
+                    {
+                      "direction": "ASC",
+                      "expression": "`movie_title`"
+                    },
+                    {
+                      "direction": "ASC",
+                      "expression": "`movie_id`"
+                    },
+                    {
+                      "direction": "ASC",
+                      "expression": "`state`"
+                    },
+                    {
+                      "direction": "ASC",
+                      "expression": "`theater`"
+                    }
+                  ]
                 }
               }
             ],
             "spec": {
               "frame": {
                 "showTitle": true,
-                "title": "Movie Placement Matrix"
+                "title": "Movie Theaters and States",
+                "showDescription": true,
+                "description": "Locations with Gold sales in the selected dates and filters; not a current screening schedule."
               },
-              "version": 3,
-              "widgetType": "scatter",
+              "version": 2,
+              "widgetType": "table",
               "encodings": {
-                "x": {
-                  "fieldName": "measure(revenue_per_showing)",
-                  "displayName": "Revenue per Showing",
-                  "scale": {
-                    "type": "quantitative"
-                  }
-                },
-                "y": {
-                  "fieldName": "measure(occupancy)",
-                  "displayName": "Occupancy",
-                  "scale": {
-                    "type": "quantitative"
-                  }
-                },
-                "color": {
-                  "fieldName": "genre",
-                  "displayName": "genre",
-                  "scale": {
-                    "type": "categorical"
-                  }
-                },
-                "size": {
-                  "fieldName": "measure(total_revenue)",
-                  "scale": {
-                    "type": "quantitative"
+                "columns": [
+                  {
+                    "fieldName": "movie_id",
+                    "displayName": "Movie ID"
                   },
-                  "displayName": "total_revenue"
-                }
+                  {
+                    "fieldName": "movie_title",
+                    "displayName": "Movie"
+                  },
+                  {
+                    "fieldName": "theater",
+                    "displayName": "Theater (ID)"
+                  },
+                  {
+                    "fieldName": "state",
+                    "displayName": "State"
+                  }
+                ]
               },
               "data": {
                 "queryName": "main_query"
@@ -2171,9 +2185,9 @@
           },
           "position": {
             "x": 0,
-            "y": 6,
-            "width": 7,
-            "height": 6
+            "y": 21,
+            "width": 12,
+            "height": 8
           }
         },
         {
@@ -2245,9 +2259,9 @@
             }
           },
           "position": {
-            "x": 7,
-            "y": 6,
-            "width": 5,
+            "x": 0,
+            "y": 9,
+            "width": 12,
             "height": 6
           }
         },
@@ -2339,7 +2353,7 @@
           },
           "position": {
             "x": 0,
-            "y": 12,
+            "y": 15,
             "width": 12,
             "height": 6
           }

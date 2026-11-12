@@ -162,6 +162,14 @@ the dashboard query identity also needs SELECT on that table. Sales-table row
 filters do not secure feedback records; grant audit access only to intended viewers
 or the intended dashboard execution identity.
 
+The **By Movie** page includes a Movie filter, a distinct-known-movie-ID count,
+and a **Movie Theaters and States** table with one row per movie ID, theater
+(name and ID), and state. These share the sales dataset and respect all page
+filters and the Gold row filter under the dashboard execution identity. "Played"
+means present in Gold sales for the selected dates, not a live screening schedule.
+The page no longer includes the Total Revenue/Showings KPI cards or Movie
+Placement Matrix; revenue and showing measures remain in the performance detail.
+
 The existing Gradio app now reads Gold daily sales for the latest seven calendar
 days ending at the maximum `show_date` visible to the signed-in user under Gold
 row-level security, with optional state and theater filters. State selection
@@ -191,7 +199,22 @@ before deploying the app. Approval requires a configured leadership email from
 the authenticated Databricks Apps proxy, an explicit confirmation, and a rationale.
 Only approval writes to `theater_analytics.gold.decision_feedback`; browsing
 does not write. The audit event includes scope, period, metric evidence, approver,
-and timestamp. Retry the same selection to avoid duplicate events; a refreshed
+and timestamp. A successful submission shows an in-app notification and keeps
+the confirmation below the approval button. Failed submissions show an error,
+not a success notification.
+All app users also see a shared **Recent decisions** feed, independent of the
+State/Theater sales filters. It loads the latest 20 approvals when the app
+opens and polls every 60 seconds; new IDs produce a decision notification in
+each open browser session. Initial historical entries do not generate popups.
+Seen IDs are session-local, not a durable read receipt; reopening the app shows
+the latest history again. This is a recent-decision feed, not guaranteed event
+delivery: if more than 20 approvals arrive between polls, only the latest 20
+are shown/notified. Background browser throttling may delay polling.
+Failures retain the previous feed and show a stale/retry message. Notifications
+use the app service principal's feedback access, with all decisions intentionally
+shared with every app user; Gold RLS is unchanged. Polling may keep the SQL
+warehouse active, so account for this in cost planning.
+Retry the same selection to avoid duplicate events; a refreshed
 review creates new IDs. Stale evidence is rechecked server-side. No schedules
 are changed automatically. Latest 20 approvals are visible after refresh.
 

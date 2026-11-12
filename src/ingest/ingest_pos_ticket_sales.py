@@ -120,7 +120,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--schema", required=True)
     parser.add_argument(
         "--start-date",
-        default="2026-03-01",
+        default="2026-11-01",
         help="ISO date for the first day of generated sales (inclusive).",
     )
     parser.add_argument(

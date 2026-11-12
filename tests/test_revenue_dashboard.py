@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import unittest
 from pathlib import Path
 
@@ -14,6 +15,83 @@ class RevenueDashboardTests(unittest.TestCase):
         cls.page = next(
             page for page in cls.dashboard["pages"] if page["name"] == "approved_decisions_page"
         )
+        cls.movie_page = next(
+            page for page in cls.dashboard["pages"] if page["name"] == "by_movie"
+        )
+        cls.movie_widgets = {
+            entry["widget"]["name"]: entry["widget"] for entry in cls.movie_page["layout"]
+        }
+
+    def test_movie_page_removes_requested_widgets_and_stale_matrix_guidance(self):
+        for name in ("kpi_total_revenue", "kpi_showings", "scatter_placement"):
+            self.assertNotIn(name, self.movie_widgets)
+        self.assertNotIn("Placement matrix", json.dumps(self.movie_page))
+        self.assertIn("kpi_total_movies", self.movie_widgets)
+        self.assertIn("kpi_revenue_per_showing", self.movie_widgets)
+
+    def test_movie_count_uses_distinct_known_ids_not_sales_rows_or_titles(self):
+        config = self.datasets["theater_sales_metrics"]["config"]
+        measure = next(item for item in config["measures"] if item["name"] == "total_movies")
+        with sqlite3.connect(":memory:") as connection:
+            connection.execute("CREATE TABLE sales (movie_id TEXT, movie_title TEXT)")
+            connection.executemany("INSERT INTO sales VALUES (?, ?)", [
+                ("m1", "Same title"), ("m1", "Same title"), ("m2", "Same title"),
+                (None, "Missing"), ("", "Missing"), ("  ", "Missing"),
+                ("Unknown", "Missing"), ("unknown", "Missing"),
+            ])
+            count = connection.execute(f"SELECT {measure['expr']} FROM sales").fetchone()[0]
+        self.assertEqual(count, 2)
+        query = self.movie_widgets["kpi_total_movies"]["queries"][0]["query"]
+        self.assertEqual(query["fields"], [{
+            "name": "measure(total_movies)", "expression": "MEASURE(`total_movies`)",
+        }])
+        self.assertFalse(query["disaggregated"])
+
+    def test_movie_filter_and_all_movie_views_share_one_dataset(self):
+        widget = self.movie_widgets["filter_movie"]
+        self.assertEqual(widget["spec"]["widgetType"], "filter-multi-select")
+        self.assertEqual(widget["spec"]["version"], 2)
+        binding = widget["spec"]["encodings"]["fields"][0]
+        query = widget["queries"][0]
+        self.assertEqual(binding["queryName"], query["name"])
+        self.assertEqual(binding["fieldName"], "movie_title")
+        self.assertEqual(query["query"]["fields"], [
+            {"name": "movie_title", "expression": "`movie_title`"},
+        ])
+        self.assertFalse(query["query"]["disaggregated"])
+        for widget in self.movie_widgets.values():
+            for query in widget.get("queries", []):
+                self.assertEqual(query["query"]["datasetName"], "theater_sales_metrics")
+
+    def test_movie_locations_lists_distinct_movie_theater_state_combinations(self):
+        widget = self.movie_widgets["table_movie_locations"]
+        query = widget["queries"][0]["query"]
+        fields = {"movie_id", "movie_title", "theater", "state"}
+        self.assertEqual({field["name"] for field in query["fields"]}, fields)
+        self.assertFalse(query["disaggregated"])
+        self.assertEqual(widget["spec"]["version"], 2)
+        self.assertEqual(widget["spec"]["widgetType"], "table")
+        self.assertEqual(
+            {column["fieldName"] for column in widget["spec"]["encodings"]["columns"]},
+            fields,
+        )
+        config = self.datasets["theater_sales_metrics"]["config"]
+        dimensions = {item["name"]: item["expr"] for item in config["dimensions"]}
+        self.assertIn("theater_id", dimensions["theater"])
+        self.assertEqual(dimensions["movie_id"], "movie_id")
+        self.assertEqual(config["source"], "theater_analytics.gold.theater_daily_sales")
+
+    def test_movie_page_layout_fills_rows_without_overlaps(self):
+        positions = [item["position"] for item in self.movie_page["layout"]]
+        for y in range(max(p["y"] + p["height"] for p in positions)):
+            cells = []
+            for p in positions:
+                if p["y"] <= y < p["y"] + p["height"]:
+                    cells.extend(range(p["x"], p["x"] + p["width"]))
+            self.assertEqual(sorted(cells), list(range(12)), f"Invalid grid row {y}")
+        for entry in self.movie_page["layout"]:
+            if entry["widget"].get("spec", {}).get("widgetType") == "counter":
+                self.assertGreaterEqual(entry["position"]["height"], 3)
 
     def test_existing_pages_and_new_decision_page_are_present(self):
         self.assertEqual(

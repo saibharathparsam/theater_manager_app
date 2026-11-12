@@ -46,6 +46,80 @@ def dashboard_data(empty=False):
 
 
 class GoldAppUiTests(unittest.TestCase):
+    def test_notification_timer_and_load_only_update_notification_components(self):
+        self.assertEqual(app.decision_timer.value, 60)
+        self.assertTrue(app.decision_timer.active)
+        notification_ids = [component._id for component in app.notification_outputs]
+        events = [
+            event for event in app.gradio_app.config["dependencies"]
+            if event["outputs"] == notification_ids
+        ]
+        self.assertEqual(len(events), 2)
+        self.assertEqual(
+            {target for event in events for target in event["targets"]},
+            {(app.gradio_app._id, "load"), (app.decision_timer._id, "tick")},
+        )
+        self.assertTrue(all(event["inputs"] == [app.seen_decisions._id] for event in events))
+        self.assertTrue(all(event["queue"] for event in events))
+        self.assertTrue(set(notification_ids).isdisjoint(component._id for component in app.outputs))
+
+    def decision_row(self, decision_id="d1"):
+        return {
+            "decision_id": decision_id, "approved_at": "2026-03-30 12:00:00",
+            "approver_email": "leader@example.com", "action": "Discontinue",
+            "movie_title": "Movie One", "theater_id": "t1",
+            "period_start": date(2026, 3, 24), "period_end": date(2026, 3, 30),
+            "approval_note": "Reviewed", "state": "NY",
+        }
+
+    def test_notification_feed_loads_recent_decisions_without_historical_toasts(self):
+        with patch.object(app.sales, "load_recent_decisions", return_value=[self.decision_row()]), patch.object(
+            app.gr, "Info"
+        ) as notify:
+            table, seen, status = app.refresh_decision_notifications(None)
+        self.assertEqual(len(table), 1)
+        self.assertEqual(seen, {"d1"})
+        self.assertIn("all states/theaters", status)
+        notify.assert_not_called()
+
+    def test_new_decision_notifies_each_session_once_independent_of_sales_filters(self):
+        with patch.object(
+            app.sales, "load_recent_decisions",
+            return_value=[self.decision_row("d2"), self.decision_row()],
+        ) as load, patch.object(app.gr, "Info") as notify:
+            for existing in ({"d1"}, {"d1"}):
+                _, seen, _ = app.refresh_decision_notifications(existing)
+                self.assertEqual(seen, {"d1", "d2"})
+            self.assertEqual(notify.call_count, 2)
+            self.assertIn("Discontinue - Movie One", notify.call_args.args[0])
+            notify.reset_mock()
+            app.refresh_decision_notifications(seen)
+            notify.assert_not_called()
+        self.assertTrue(all(call.args == () for call in load.call_args_list))
+
+    def test_empty_feed_then_first_approval_notifies(self):
+        with patch.object(app.sales, "load_recent_decisions", return_value=[]):
+            table, seen, status = app.refresh_decision_notifications(None)
+        self.assertTrue(table.empty)
+        self.assertEqual(seen, set())
+        self.assertIn("No leadership decisions", status)
+        with patch.object(app.sales, "load_recent_decisions", return_value=[self.decision_row()]), patch.object(
+            app.gr, "Info"
+        ) as notify:
+            app.refresh_decision_notifications(seen)
+        notify.assert_called_once()
+
+    def test_notification_failure_preserves_seen_state_and_shows_staleness(self):
+        seen = {"d1"}
+        with patch.object(app.sales, "load_recent_decisions", side_effect=RuntimeError("test")), patch.object(
+            app.gr, "Info"
+        ) as notify, self.assertLogs(app.logger, level="ERROR"):
+            table, result_seen, status = app.refresh_decision_notifications(seen)
+        self.assertEqual(table, app.gr.skip())
+        self.assertIs(result_seen, seen)
+        self.assertIn("stale", status)
+        notify.assert_not_called()
+
     def test_read_only_viewer_sees_metrics_but_cannot_approve(self):
         request = SimpleNamespace(headers={"x-forwarded-access-token": "test-token"})
         with patch.object(app.sales, "load_dashboard", return_value=dashboard_data()):
@@ -110,12 +184,41 @@ class GoldAppUiTests(unittest.TestCase):
             "x-forwarded-access-token": "test-token",
         })
         evidence = {"server-id": {"movie_id": "m1"}}
-        with patch.object(app.sales, "approve_decision", return_value="Recorded") as approve:
+        with patch.object(app.sales, "approve_decision", return_value="Recorded") as approve, patch.object(
+            app.gr, "Info"
+        ) as notify:
             result = app.approve("server-id", evidence, "t1", True, "Reviewed", request)
         self.assertEqual(result, "Recorded")
+        notify.assert_called_once_with("Recorded")
         approve.assert_called_once_with(
             "server-id", evidence, "t1", True, "Reviewed", "leader@example.com", "test-token", ""
         )
+
+    def test_failed_approval_does_not_show_success_notification(self):
+        request = SimpleNamespace(headers={
+            "x-forwarded-email": "leader@example.com",
+            "x-forwarded-access-token": "test-token",
+        })
+        for error in (ValueError("Review required"), RuntimeError("Write not verified")):
+            with self.subTest(error=type(error).__name__), patch.object(
+                app.sales, "approve_decision", side_effect=error
+            ), patch.object(app.gr, "Info") as notify:
+                with self.assertLogs(app.logger), self.assertRaises(app.gr.Error):
+                    app.approve("id", {}, "", True, "Reviewed", request)
+                notify.assert_not_called()
+
+    def test_already_recorded_approval_shows_retry_notification(self):
+        request = SimpleNamespace(headers={
+            "x-forwarded-email": "leader@example.com",
+            "x-forwarded-access-token": "test-token",
+        })
+        message = "Decision id was already recorded. No duplicate was added."
+        with patch.object(app.sales, "approve_decision", return_value=message), patch.object(
+            app.gr, "Info"
+        ) as notify:
+            result = app.approve("id", {}, "", True, "Reviewed", request)
+        self.assertEqual(result, message)
+        notify.assert_called_once_with(message)
 
     def test_state_filter_is_forwarded_to_reads_and_approval(self):
         request = SimpleNamespace(headers={

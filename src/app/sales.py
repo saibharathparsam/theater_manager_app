@@ -115,6 +115,18 @@ def fetch_rows(cursor, query: str, parameters: dict | None = None) -> list[dict]
     return [dict(zip(columns, row, strict=True)) for row in cursor.fetchall()]
 
 
+def load_recent_decisions() -> list[dict]:
+    with get_connection() as connection, connection.cursor() as cursor:
+        return fetch_rows(
+            cursor,
+            f"""SELECT decision_id, approved_at, approver_email, action, movie_title,
+                       theater_id, period_start, period_end, approval_note,
+                       COALESCE(get_json_object(evidence_json, '$.state'), '') AS state
+                FROM {FEEDBACK_TABLE}
+                ORDER BY approved_at DESC, decision_id DESC LIMIT 20""",
+        )
+
+
 def read_movies(cursor, theater_id: str, state: str = "") -> list[dict]:
     rows = fetch_rows(cursor, MOVIES_SQL, {"theater_id": theater_id, "state": state})
     for row in rows:

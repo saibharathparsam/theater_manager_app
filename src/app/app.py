@@ -50,6 +50,51 @@ def recommendation_table(recommendations: dict, action: str) -> pd.DataFrame:
     )
 
 
+def decision_table(rows: list[dict]) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            [
+                row["approved_at"], row["approver_email"], row["action"],
+                row["movie_title"], row["theater_id"] or "All theaters",
+                row["period_start"], row["period_end"], row["approval_note"],
+                row.get("state") or "All states",
+            ]
+            for row in rows
+        ],
+        columns=HISTORY_COLUMNS,
+    )
+
+
+def refresh_decision_notifications(seen_ids: set | None):
+    try:
+        rows = sales.load_recent_decisions()
+    except (SqlError, RuntimeError):
+        logger.exception("Shared decision notifications refresh failed")
+        return (
+            gr.skip(), seen_ids,
+            "Decision notifications could not refresh. Displayed decisions may be stale; "
+            "the app will retry in 60 seconds.",
+        )
+    current_ids = {row["decision_id"] for row in rows}
+    if seen_ids is not None:
+        new_rows = [row for row in rows if row["decision_id"] not in seen_ids]
+        if new_rows:
+            latest = new_rows[0]
+            gr.Info(
+                f"{len(new_rows)} new leadership decision(s). Latest: "
+                f"{latest['action']} - {latest['movie_title']}; "
+                f"state: {latest.get('state') or 'All states'}; "
+                f"theater: {latest['theater_id'] or 'All theaters'}. "
+                "See Recent decisions for the rationale and approver."
+            )
+    return (
+        decision_table(rows),
+        (seen_ids or set()) | current_ids,
+        "Latest 20 decisions across all states/theaters. Refreshes every 60 seconds."
+        if rows else "No leadership decisions have been recorded yet. Refreshes every 60 seconds.",
+    )
+
+
 def update_dashboard(theater_id: str | None, request: gr.Request, state: str = ""):
     try:
         data = sales.load_dashboard(theater_id or "", viewer_token(request), state or "")
@@ -101,18 +146,7 @@ def update_dashboard(theater_id: str | None, request: gr.Request, state: str = "
         )
     elif not recommendations:
         context += "  \n**No eligible recommendations.** Check reference matches and measures."
-    history = pd.DataFrame(
-        [
-            [
-                row["approved_at"], row["approver_email"], row["action"],
-                row["movie_title"], row["theater_id"] or "All theaters",
-                row["period_start"], row["period_end"], row["approval_note"],
-                row.get("state") or "All states",
-            ]
-            for row in data["history"]
-        ],
-        columns=HISTORY_COLUMNS,
-    )
+    history = decision_table(data["history"])
     daily = pd.DataFrame(data["daily"], columns=["show_date", "revenue"])
     daily["show_date"] = pd.to_datetime(daily["show_date"]).dt.strftime("%Y-%m-%d")
     daily["revenue"] = pd.to_numeric(daily["revenue"])
@@ -136,12 +170,14 @@ def update_dashboard(theater_id: str | None, request: gr.Request, state: str = "
 
 def approve(decision_id, recommendations, theater_id, confirmed, note, request: gr.Request, state: str = ""):
     try:
-        return sales.approve_decision(
+        result = sales.approve_decision(
             decision_id, recommendations, theater_id or "", confirmed, note,
             viewer_email(request),
             viewer_token(request),
             state or "",
         )
+        gr.Info(result)
+        return result
     except (ValueError, PermissionError) as error:
         logger.warning("Approval rejected: %s", error)
         raise gr.Error(str(error)) from error
@@ -158,6 +194,23 @@ with gr.Blocks(title="Reel Insights | Leadership") as gradio_app:
         "# Reel Insights | Leadership\n"
         "Review Gold sales performance and approve evidence-based movie decisions."
     )
+    gr.Markdown(
+        "## Recent decisions | shared with all app users\n"
+        "Independent of your sales filters and Gold row-level security. "
+        "Open this app to see recent decisions; new decisions trigger a notification "
+        "while it remains open. This records approvals, not schedule changes."
+    )
+    notification_status = gr.Markdown("Loading recent decisions...")
+    notification_feed = gr.Dataframe(headers=HISTORY_COLUMNS, interactive=False, wrap=True)
+    seen_decisions = gr.State(None)
+    decision_timer = gr.Timer(60)
+    notification_outputs = [notification_feed, seen_decisions, notification_status]
+    for event in (gradio_app.load, decision_timer.tick):
+        event(
+            fn=refresh_decision_notifications, inputs=[seen_decisions],
+            outputs=notification_outputs, api_name=False,
+            concurrency_id="decision-notifications", concurrency_limit=1,
+        )
     with gr.Row():
         state_filter = gr.Dropdown(
             choices=[("All states", "")], value="", label="State", interactive=True

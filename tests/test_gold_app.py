@@ -26,6 +26,20 @@ def movie(index, tickets=10, days=2):
 
 
 class GoldSalesTests(unittest.TestCase):
+    def test_shared_decisions_use_app_identity_without_scope_filters_or_writes(self):
+        connection = MagicMock()
+        cursor = connection.__enter__.return_value.cursor.return_value.__enter__.return_value
+        with patch.object(sales, "get_connection", return_value=connection), patch.object(
+            sales, "fetch_rows", return_value=[{"decision_id": "d1"}]
+        ) as fetch:
+            self.assertEqual(sales.load_recent_decisions(), [{"decision_id": "d1"}])
+        query = fetch.call_args.args[1]
+        self.assertIn(sales.FEEDBACK_TABLE, query)
+        self.assertIn("ORDER BY approved_at DESC, decision_id DESC LIMIT 20", query)
+        self.assertNotIn("WHERE", query)
+        self.user_connect.assert_not_called()
+        cursor.execute.assert_not_called()
+
     def setUp(self):
         user_connection = patch.object(sales, "get_user_connection")
         self.user_connect = user_connection.start()
