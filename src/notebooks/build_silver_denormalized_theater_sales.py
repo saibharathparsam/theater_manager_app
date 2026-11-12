@@ -27,6 +27,8 @@
 # MAGIC separate refresh/backfill; same-timestamp replay does not refresh enrichment.
 # MAGIC Source key validation fails before writing if joins could multiply transactions.
 # MAGIC This notebook does not read quarantine, cleanse POS again, or create Gold tables.
+# MAGIC Pending APPLIED recoveries bypass the ingestion-date watermark. After the
+# MAGIC MERGE, their exact restored hashes must exist before publishing Gold.
 
 # COMMAND ----------
 
@@ -100,6 +102,13 @@ def run_load(spark: SparkSession) -> None:
     spark.conf.set("spark.sql.session.timeZone", "UTC")
     target_exists = spark.catalog.tableExists(TARGET_TABLE)
     target = spark.table(TARGET_TABLE) if target_exists else None
+    recovery_table = "theater_analytics.silver.quarantine_recovery_requests"
+    recovery_hashes = None
+    if spark.catalog.tableExists(recovery_table):
+        recovery_hashes = (
+            spark.table(recovery_table).where("status = 'APPLIED'")
+            .select(F.col("restored_source_row_hash").alias("_recovery_hash")).distinct()
+        )
     if target is not None:
         validate_keys(target, MERGE_KEYS, TARGET_TABLE)
 
@@ -108,14 +117,17 @@ def run_load(spark: SparkSession) -> None:
         watermarks = target.groupBy("pos_source").agg(
             F.max("ingestion_date").alias("_max_ingestion_date")
         )
-        sales = (
-            sales.join(watermarks, on="pos_source", how="left")
-            .where(
-                F.col("_max_ingestion_date").isNull()
-                | (F.col("ingestion_date") >= F.col("_max_ingestion_date"))
-            )
-            .drop("_max_ingestion_date")
+        sales = sales.join(watermarks, on="pos_source", how="left")
+        replay = (
+            F.col("_max_ingestion_date").isNull()
+            | (F.col("ingestion_date") >= F.col("_max_ingestion_date"))
         )
+        if recovery_hashes is not None:
+            sales = sales.join(
+                recovery_hashes, sales.source_row_hash == recovery_hashes._recovery_hash, "left"
+            )
+            replay = replay | F.col("_recovery_hash").isNotNull()
+        sales = sales.where(replay).drop("_max_ingestion_date", "_recovery_hash")
     validate_keys(sales, MERGE_KEYS, SOURCE_TABLE)
     sources = {
         "theater_analytics.silver.theater_layout": ["theater_id", "screen_id"],
@@ -151,6 +163,14 @@ def run_load(spark: SparkSession) -> None:
         spark.catalog.dropTempView("pos_sales_incremental")
 
     validate_keys(spark.table(TARGET_TABLE), MERGE_KEYS, TARGET_TABLE)
+    if recovery_hashes is not None:
+        missing_recoveries = recovery_hashes.join(
+            spark.table(TARGET_TABLE),
+            recovery_hashes._recovery_hash == F.col("source_row_hash"),
+            "left_anti",
+        ).take(1)
+        if missing_recoveries:
+            raise RuntimeError("Recovered sales are missing from combined Silver; Gold refresh was blocked.")
     print(f"Incrementally merged {TARGET_TABLE}; unmatched POS rows are retained.")
     print("Match coverage (POS data-quality flags remain unchanged):")
     spark.table(TARGET_TABLE).groupBy(

@@ -1,67 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="620" viewBox="0 0 1440 620" style="max-width:100%;height:auto" role="img" aria-labelledby="title description">
-  <title id="title">Theater analytics data flow</title>
-  <desc id="description">Bronze raw data flows through Silver preparation and data-quality checks into Gold daily sales. Silver powers the DQ dashboard. Gold powers revenue dashboards and the app. The app records feedback, which is visible in the app and revenue dashboards.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="800" viewBox="0 0 1440 800" role="img" aria-labelledby="title description">
+  <title id="title">Theater analytics and quarantine recovery</title>
+  <desc id="description">Bronze flows through Silver validation to Gold, the app and dashboards. Rejected sales go to quarantine. Operations reviews quarantine in the app, submits an audited correction request, and the recovery job restores valid records through Silver and Gold. Leadership decisions are recorded in feedback and visible to app users and revenue dashboards.</desc>
   <defs>
-    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-      <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b"/>
-    </marker>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 Z" fill="#64748b"/></marker>
     <style>
       text { font-family: "Segoe UI", Arial, sans-serif; fill: #1e293b; }
-      .title { font-size: 32px; font-weight: 700; }
-      .heading { font-size: 25px; font-weight: 700; }
-      .detail { font-size: 19px; fill: #475569; }
-      .box { stroke-width: 1.5; rx: 16; }
+      .title { font-size: 30px; font-weight: 700; }
+      .heading { font-size: 23px; font-weight: 700; }
+      .detail { font-size: 17px; fill: #475569; }
+      .box { stroke-width: 1.5; rx: 14; }
       .flow { fill: none; stroke: #64748b; stroke-width: 2.5; marker-end: url(#arrow); }
     </style>
   </defs>
-  <rect width="1440" height="620" fill="#ffffff"/>
-  <text x="60" y="65" class="title">Theater analytics data flow</text>
-
-  <g id="bronze">
-    <rect x="60" y="150" width="270" height="130" class="box" fill="#fff7ed" stroke="#d99a45"/>
-    <text x="85" y="192" class="heading">Bronze</text>
-    <text x="85" y="226" class="detail">Raw data</text>
-    <text x="85" y="253" class="detail">POS, theaters and movies</text>
+  <rect width="1440" height="800" fill="#ffffff"/>
+  <text x="50" y="58" class="title">Theater analytics and quarantine recovery</text>
+  <g>
+    <rect x="50" y="120" width="250" height="115" class="box" fill="#fff7ed" stroke="#d99a45"/>
+    <text x="72" y="160" class="heading">Bronze</text>
+    <text x="72" y="190" class="detail">Raw POS, theater and movie data</text>
+    <rect x="395" y="120" width="250" height="115" class="box" fill="#f1f5f9" stroke="#94a3b8"/>
+    <text x="417" y="160" class="heading">Silver</text>
+    <text x="417" y="190" class="detail">Validation + sales enrichment</text>
+    <rect x="740" y="120" width="250" height="115" class="box" fill="#fffbeb" stroke="#d4a72c"/>
+    <text x="762" y="160" class="heading">Gold</text>
+    <text x="762" y="190" class="detail">Daily sales</text>
+    <rect x="1085" y="120" width="275" height="115" class="box" fill="#eff6ff" stroke="#60a5fa"/>
+    <text x="1107" y="160" class="heading">Revenue dashboards</text>
+    <text x="1107" y="190" class="detail">Sales + leadership decisions</text>
+    <rect x="50" y="345" width="250" height="115" class="box" fill="#fff1f2" stroke="#fb7185"/>
+    <text x="72" y="385" class="heading">Quarantine</text>
+    <text x="72" y="415" class="detail">Rejected POS versions</text>
+    <rect x="395" y="345" width="250" height="115" class="box" fill="#f0fdf4" stroke="#4ade80"/>
+    <text x="417" y="385" class="heading">Reel Insights app</text>
+    <text x="417" y="415" class="detail">Sales, decisions + operations</text>
+    <rect x="740" y="345" width="250" height="115" class="box" fill="#f5f3ff" stroke="#a78bfa"/>
+    <text x="762" y="385" class="heading">Decision feedback</text>
+    <text x="762" y="415" class="detail">Shared leadership approvals</text>
+    <rect x="1085" y="345" width="275" height="115" class="box" fill="#f1f5f9" stroke="#94a3b8"/>
+    <text x="1107" y="385" class="heading">DQ dashboard</text>
+    <text x="1107" y="415" class="detail">Quality issues + quarantine</text>
+    <rect x="395" y="580" width="250" height="115" class="box" fill="#fefce8" stroke="#eab308"/>
+    <text x="417" y="620" class="heading">Correction requests</text>
+    <text x="417" y="650" class="detail">Audited recovery ledger</text>
+    <rect x="740" y="580" width="250" height="115" class="box" fill="#ecfeff" stroke="#22d3ee"/>
+    <text x="762" y="620" class="heading">Recovery job</text>
+    <text x="762" y="650" class="detail">Validate + restore</text>
   </g>
-  <g id="silver">
-    <rect x="410" y="150" width="270" height="130" class="box" fill="#f1f5f9" stroke="#94a3b8"/>
-    <text x="435" y="192" class="heading">Silver</text>
-    <text x="435" y="226" class="detail">Data preparation</text>
-    <text x="435" y="253" class="detail">Normalize + DQ validation</text>
-  </g>
-  <g id="gold">
-    <rect x="760" y="150" width="270" height="130" class="box" fill="#fffbeb" stroke="#d4a72c"/>
-    <text x="785" y="192" class="heading">Gold</text>
-    <text x="785" y="226" class="detail">Daily sales</text>
-    <text x="785" y="253" class="detail">Revenue + tickets</text>
-  </g>
-  <g id="app">
-    <rect x="1110" y="150" width="270" height="130" class="box" fill="#f5f3ff" stroke="#a78bfa"/>
-    <text x="1135" y="192" class="heading">Reel Insights app</text>
-    <text x="1135" y="226" class="detail">Performance review</text>
-    <text x="1135" y="253" class="detail">Movie recommendations</text>
-  </g>
-  <path d="M 330 215 H 410" class="flow"/>
-  <path d="M 680 215 H 760" class="flow"/>
-  <path d="M 1030 215 H 1110" class="flow"/>
-
-  <g id="dq-dashboard">
-    <rect x="410" y="420" width="270" height="115" class="box" fill="#ecfdf5" stroke="#34a580"/>
-    <text x="435" y="466" class="heading">DQ dashboard</text>
-    <text x="435" y="502" class="detail">Quality issues + quarantine</text>
-  </g>
-  <g id="revenue-dashboard">
-    <rect x="760" y="420" width="270" height="115" class="box" fill="#eff6ff" stroke="#60a5fa"/>
-    <text x="785" y="466" class="heading">Revenue dashboards</text>
-    <text x="785" y="502" class="detail">Overall, movie and theater</text>
-  </g>
-  <g id="feedback">
-    <rect x="1110" y="420" width="270" height="115" class="box" fill="#f5f3ff" stroke="#a78bfa"/>
-    <text x="1135" y="466" class="heading">Decision feedback</text>
-    <text x="1135" y="502" class="detail">Leadership approvals</text>
-  </g>
-  <path d="M 545 280 V 420" class="flow"/>
-  <path d="M 895 280 V 420" class="flow"/>
-  <path d="M 1245 280 V 420" class="flow" marker-start="url(#arrow)"/>
-  <path d="M 1110 478 H 1030" class="flow"/>
+  <path class="flow" d="M300 177 H395 M645 177 H740 M990 177 H1085"/>
+  <path class="flow" d="M865 235 V285 H520 V345"/>
+  <path class="flow" d="M395 195 H345 V285 H175 V345"/>
+  <path class="flow" d="M300 402 H395"/>
+  <path class="flow" marker-start="url(#arrow)" d="M645 402 H740"/>
+  <path class="flow" d="M990 402 H1030 V260 H1220 V235"/>
+  <path class="flow" d="M520 120 V90 H1390 V402 H1360"/>
+  <path class="flow" d="M520 460 V580 M645 637 H740"/>
+  <path class="flow" d="M865 695 V735 H330 V210 H395"/>
+  <text x="69" y="494" class="detail">Review original records</text>
+  <text x="403" y="733" class="detail">Restore valid records and refresh Silver + Gold</text>
 </svg>

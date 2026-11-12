@@ -1,6 +1,6 @@
 {
   "datasets": [
-    {
+Table feature(s) configured in the following Spark configs or Delta table properties are not recognized by this version of Databricks: delta.feature.timetype. SQLSTATE: 56038    {
       "name": "approved_decisions",
       "displayName": "Approved leadership decisions",
       "catalog": "theater_analytics",

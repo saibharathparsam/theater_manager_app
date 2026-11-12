@@ -4,7 +4,7 @@ command: [
 ]
 env:
   - name: DATABRICKS_WAREHOUSE_ID
-    value_from: sql-warehouse
+    valueFrom: sql-warehouse
   - name: THEATER_CATALOG
     value: theater_analytics
   - name: THEATER_SCHEMA
@@ -13,3 +13,7 @@ env:
     value: decision_feedback
   - name: LEADERSHIP_APPROVERS
     value: saibharathparsam@outlook.com
+  - name: QUARANTINE_OPERATORS
+    value: saibharathparsam@outlook.com
+  - name: QUARANTINE_RECOVERY_JOB_ID
+    valueFrom: quarantine-recovery-job

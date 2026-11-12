@@ -5,15 +5,22 @@
 ```mermaid
 flowchart LR
     Bronze["Bronze<br/>Raw POS, theater and movie data"]
-    Silver["Silver<br/>Data preparation + DQ validation"]
+    Silver["Silver<br/>Validation + sales enrichment"]
     Gold["Gold<br/>Daily revenue + tickets"]
     DQ["DQ dashboard<br/>Quality issues + quarantine"]
     Revenue["Revenue dashboards<br/>Overall, movie and theater"]
-    App["Reel Insights app<br/>Performance + recommendations"]
+    Quarantine["Quarantine<br/>Rejected POS versions"]
+    App["Reel Insights app<br/>Sales, decisions + operations"]
     Feedback["Decision feedback<br/>Leadership approvals"]
+    Requests["Correction requests<br/>Audited ledger"]
+    Recovery["Recovery job<br/>Validate + restore"]
 
     Bronze --> Silver --> Gold --> App
     Silver --> DQ
+    Silver -->|Rejected records| Quarantine
+    Quarantine -->|Review| App
+    App -->|Verified correction| Requests --> Recovery
+    Recovery -->|Restore + refresh| Silver
     Gold --> Revenue
     App <--> Feedback
     Feedback --> Revenue

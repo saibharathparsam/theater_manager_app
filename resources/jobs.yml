@@ -71,7 +71,11 @@ resources:
         three source Silver notebooks, then builds the combined Silver dataset.
         Full-refreshes theater layout and IMDB metadata; incrementally merges POS
         ticket sales and denormalized theater sales. Run after seeding Bronze.
+        Processes operator correction requests after POS ingestion; applied recoveries
+        automatically refresh Gold and complete their audit status.
       max_concurrent_runs: 1
+      queue:
+        enabled: true
       tags:
         purpose: fde_interview_packet
       tasks:
@@ -88,13 +92,48 @@ resources:
             source: WORKSPACE
 
         - task_key: build_silver_pos_ticket_sales
-          description: Incrementally merge normalized POS sales and quarantine invalid rows.
+          description: Load normal POS sales, then validate and restore queued operator corrections.
+          max_retries: 2
+          min_retry_interval_millis: 10000
+          depends_on:
+            - task_key: build_silver_theater_layout
+            - task_key: build_silver_imdb_metadata
           notebook_task:
-            notebook_path: ../src/notebooks/build_silver_pos_ticket_sales.py
+            notebook_path: ../src/notebooks/process_quarantine_recovery.py
+            source: WORKSPACE
+
+        - task_key: has_applied_recoveries
+          depends_on:
+            - task_key: build_silver_pos_ticket_sales
+          condition_task:
+            op: EQUAL_TO
+            left: "{{tasks.build_silver_pos_ticket_sales.values.recovery_applied}}"
+            right: "true"
+
+        - task_key: refresh_gold_after_recovery
+          max_retries: 2
+          min_retry_interval_millis: 10000
+          depends_on:
+            - task_key: build_silver_denormalized_theater_sales
+            - task_key: has_applied_recoveries
+              outcome: "true"
+          notebook_task:
+            notebook_path: ../src/notebooks/build_gold_theater_daily_sales.py
+            source: WORKSPACE
+
+        - task_key: complete_quarantine_recovery
+          max_retries: 2
+          min_retry_interval_millis: 10000
+          depends_on:
+            - task_key: refresh_gold_after_recovery
+          notebook_task:
+            notebook_path: ../src/notebooks/complete_quarantine_recovery.py
             source: WORKSPACE
 
         - task_key: build_silver_denormalized_theater_sales
           description: Left-join all Silver sources and incrementally merge the Gold-ready dataset.
+          max_retries: 2
+          min_retry_interval_millis: 10000
           depends_on:
             - task_key: build_silver_theater_layout
             - task_key: build_silver_imdb_metadata
@@ -108,7 +147,7 @@ resources:
       description: >-
         Full-refreshes theater_analytics.gold.theater_daily_sales by aggregating
         Silver POS sales before left-joining Silver theater layout and IMDB
-        metadata. Run after the Silver job succeeds; requires TIME-capable serverless compute.
+        metadata. Run after the Silver job succeeds; operating hours use portable HH:mm:ss strings.
       max_concurrent_runs: 1
       tags:
         purpose: fde_interview_packet
