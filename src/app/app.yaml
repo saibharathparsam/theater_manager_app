@@ -12,8 +12,8 @@ env:
   - name: THEATER_FEEDBACK_TABLE
     value: decision_feedback
   - name: LEADERSHIP_APPROVERS
-    value: saibharathparsam@outlook.com
+    value: ""
   - name: QUARANTINE_OPERATORS
-    value: saibharathparsam@outlook.com
+    value: ""
   - name: QUARANTINE_RECOVERY_JOB_ID
     valueFrom: quarantine-recovery-job

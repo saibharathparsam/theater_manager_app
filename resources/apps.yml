@@ -15,22 +15,3 @@ resources:
           sql_warehouse:
             id: ${var.warehouse_id}
             permission: CAN_USE
-      config:
-        command:
-          - python
-          - app.py
-        env:
-          - name: DATABRICKS_WAREHOUSE_ID
-            value_from: sql-warehouse
-          - name: THEATER_CATALOG
-            value: theater_analytics
-          - name: THEATER_SCHEMA
-            value: gold
-          - name: THEATER_FEEDBACK_TABLE
-            value: decision_feedback
-          - name: LEADERSHIP_APPROVERS
-            value: saibharathparsam@outlook.com
-          - name: QUARANTINE_OPERATORS
-            value: saibharathparsam@outlook.com
-          - name: QUARANTINE_RECOVERY_JOB_ID
-            value_from: quarantine-recovery-job

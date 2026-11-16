@@ -131,20 +131,21 @@ Seeding overwrites all three source tables.
 | Tier | When to use | Commands |
 |------|-------------|----------|
 | **Dashboard only** | Editing `src/dashboard/theater_performance.lvdash.json` | `databricks bundle deploy --target dev --profile my-profile`. Skip both jobs. |
-| **Transform only** | Source tables exist (Silver job requires `theater_analytics.bronze`); you changed a Silver notebook or the denormalized transform | `databricks bundle deploy --target dev --profile my-profile`<br>`databricks bundle run --target dev --profile my-profile build_silver_theater_data`<br>`databricks bundle run --target dev --profile my-profile build_denormalized_theater_sales --params="catalog=theater_analytics,schema=bronze"` |
-| **Source data** | You changed an ingest script | `databricks bundle deploy --target dev --profile my-profile`<br>`databricks bundle run --target dev --profile my-profile seed_theater_data --params="catalog=theater_analytics,schema=bronze"`<br>`databricks bundle run --target dev --profile my-profile build_denormalized_theater_sales --params="catalog=theater_analytics,schema=bronze"` |
-| **App** | Iterating on the Databricks App; Gold tables and grants already exist | Configure approver/operator variables and the runtime manifest, then deploy as described in [SETUP.md section 5](SETUP.md#5-deploy-and-start-the-reel-insights-application). Verify the active deployment before use. |
+| **Transform only** | Bronze exists in `theater_analytics.bronze`; you changed a Silver notebook | `databricks bundle deploy --target dev --profile my-profile`<br>`databricks bundle run --target dev --profile my-profile build_silver_theater_data` |
+| **Source data** | You intentionally want to regenerate source data | `databricks bundle deploy --target dev --profile my-profile`<br>`databricks bundle run --target dev --profile my-profile seed_theater_data --params="catalog=theater_analytics,schema=bronze"`<br>`databricks bundle run --target dev --profile my-profile build_silver_theater_data` |
+| **App** | Iterating on the Databricks App; Gold tables and grants already exist | Configure approver/operator allowlists in an untracked runtime manifest copy, then publish as described in [SETUP.md section 5](SETUP.md#5-deploy-and-start-the-reel-insights-application). There are no allowlist bundle variables. Verify the active deployment before use. |
 | **Gold/app data refresh** | Bronze exists in `theater_analytics.bronze`; refresh the app's serving data | `databricks bundle deploy --target dev --profile my-profile`<br>`databricks bundle run --target dev --profile my-profile build_silver_theater_data`<br>`databricks bundle run --target dev --profile my-profile build_gold_theater_data` |
-| **Legacy dashboard cold start** | Initialize the original Bronze-based dashboard | Deploy the bundle, then run `seed_theater_data` followed by `build_denormalized_theater_sales` (same three commands as **Source data**). For the Gold app, follow [SETUP.md section 5](SETUP.md#5-deploy-and-start-the-reel-insights-application), including feedback/grants. |
+| **Legacy dashboard cold start** | Initialize the original comparison dashboard in `workspace.fde_theater` | Follow [SETUP.md section 3](SETUP.md#3-build-the-denormalized-table). Its SQL catalog/schema parameters are independent of the modernized fixed Bronze/Silver/Gold paths. |
 
 The Silver job currently has fixed paths: it reads `theater_analytics.bronze`
 and writes `theater_analytics.silver`, so it does not accept catalog/schema
 overrides. The denormalized transform reads and writes the selected schema;
 it is not yet a Silver-to-Gold job. Per-run overrides do not change app or
 dashboard configuration.
-The **Source data** and **Transform only** commands above refresh the legacy
-dashboard, not Gold. Follow them with the **Gold/app data refresh** commands
-when the app must reflect those changes.
+The **Source data** and **Transform only** commands above refresh Silver, not
+Gold (except when a pending recovery triggers Gold publication). Run
+`build_gold_theater_data` afterward when the app must reflect ordinary ingestion
+changes. Reseeding overwrites any demo manager mappings; remap them before refresh.
 
 ### Run the Silver job
 
@@ -365,7 +366,7 @@ Changing either scope requires refreshed recommendations before approval.
 
 ### Gold row-level security
 
-The security notebook captures the deployed `sales_row_filter` policy. Members
+The security notebook installs the `sales_row_filter` policy. Members
 of the `theater_leadership` account group or the `gold.leadership_users` table
 can see all sales rows; other viewers see rows where their signed-in identity
 matches `manager_email` or `zone_manager_email`. The filter is attached to
@@ -377,15 +378,25 @@ app approval permissions, and Operations access are separate controls. Run the
 notebook in its default inspect mode first; apply mode replaces the sales filter
 and grants configured app access only after an authorized owner reviews it.
 
-Validate the backend and Gradio callbacks locally after installing the app
-requirements:
+The development bundle derives its workspace root and run-as identity from the
+authenticated deploying user; grant notebooks require the app's client UUID
+instead of a hardcoded principal. The runtime manifest defaults both action
+allowlists to empty. Deployment, owner provisioning and real-viewer checks are
+separate gates: use the [role-verification matrix](SETUP.md#6a-verify-role-based-access-before-sharing)
+and [verification notebook](src/notebooks/verify_theater_access.py) before sharing.
+
+Validate the backend, provisioning, manifests, dashboard and Gradio callbacks
+locally in an isolated environment:
 
 ```powershell
-python -m pip install -r src\app\requirements.txt
-python -m unittest discover -s tests -p "test_gold_app*.py" -v
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
 ```
 
-These tests mock database access and do not insert production approvals.
+These tests mock database access and do not insert production approvals or
+certify live Unity Catalog enforcement. Validate the bundle with `--strict`
+against your explicitly chosen workspace before deploying.
 
 ### Leadership data-quality dashboard
 

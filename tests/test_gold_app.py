@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import runpy
+import sys
 import unittest
 from datetime import date
 from decimal import Decimal
@@ -78,7 +79,7 @@ class GoldSalesTests(unittest.TestCase):
             self.assertIn(defaults["TABLE_NAME"], defaults[key])
             self.assertNotIn("denormalized_theater_sales", defaults[key])
 
-    def run_grant_notebook(self):
+    def run_grant_notebook(self, client_id="00000000-0000-0000-0000-000000000001"):
         spark = MagicMock()
         spark_session = SimpleNamespace(builder=MagicMock())
         spark_session.builder.getOrCreate.return_value = spark
@@ -86,16 +87,20 @@ class GoldSalesTests(unittest.TestCase):
             "pyspark": SimpleNamespace(),
             "pyspark.sql": SimpleNamespace(SparkSession=spark_session),
         }
-        with patch.dict("sys.modules", modules):
+        widgets = SimpleNamespace(text=MagicMock(), get=lambda name: client_id)
+        with patch.dict("sys.modules", modules), patch.object(
+            sys, "path", [str(APP_PATH.parent / "notebooks"), *sys.path]
+        ):
             runpy.run_path(
                 str(APP_PATH.parent / "notebooks" / "grant_app_catalog_access.py"),
+                init_globals={"dbutils": SimpleNamespace(widgets=widgets)},
             )
         return spark
 
     def test_grant_notebook_limits_access_to_gold_tables(self):
         spark = self.run_grant_notebook()
         statements = [call.args[0] for call in spark.sql.call_args_list]
-        principal = "`e44e0047-b327-4a29-bcf2-809a85ff2811`"
+        principal = "`00000000-0000-0000-0000-000000000001`"
         self.assertEqual(statements[:4], [
             f"GRANT USE CATALOG ON CATALOG theater_analytics TO {principal}",
             f"GRANT USE SCHEMA ON SCHEMA theater_analytics.gold TO {principal}",
@@ -104,6 +109,11 @@ class GoldSalesTests(unittest.TestCase):
         ])
         self.assertEqual(len(statements), 6)
         self.assertFalse(any("workspace.fde_theater" in sql for sql in statements))
+
+    def test_grant_notebook_requires_an_explicit_app_client_uuid(self):
+        for value in ("", "12345", "viewer@example.com"):
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.run_grant_notebook(client_id=value)
 
     def test_ranking_normalizes_by_screen_days_and_never_overlaps(self):
         rows = [movie(index, tickets=index + 10) for index in range(12)]
