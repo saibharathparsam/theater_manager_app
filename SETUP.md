@@ -17,23 +17,39 @@ or publish a new app deployment.
 
 The modernized Silver and Gold notebooks use fixed `theater_analytics` table
 paths. Bundle `catalog` and `schema` variables apply to the seed and legacy
-transform, not those notebook paths. The current bundle also contains a
-workspace-specific root path and run-as identity in `databricks.yml`; review
-them, app allowlists, and grant-notebook principal IDs before deploying elsewhere.
+transform, not those notebook paths. The development workspace folder and job
+run-as identity resolve to the authenticated deploying user. Before reusing an
+existing deployment owned by someone else, confirm its bundle root and execution
+identity rather than deploying a second copy over shared resources.
 All example commands use `my-profile`; replace it with your authenticated profile.
-The bundle variables `leadership_approvers` and `quarantine_operators` default
-to empty, which denies those actions. Supply comma-separated allowlists during
-deployment and configure the runtime manifest as described in section 5.
+The runtime `src/app/app.yaml` is the single source of app environment configuration.
+Its approval/operator allowlists are empty by default, denying both actions.
+There are no `leadership_approvers` or `quarantine_operators` bundle variables.
+Configure an untracked runtime copy as described in section 5.
 
 ## Prerequisites
 
-- Databricks CLI >= 0.260.0; see the [installation guide](https://docs.databricks.com/aws/en/dev-tools/cli/install).
+- Databricks CLI >= 1.0.0; see the [installation guide](https://docs.databricks.com/aws/en/dev-tools/cli/install).
 - A Databricks workspace (Free Edition or higher)
 - A CLI profile configured for the target workspace, e.g. `databricks auth login --host <your-workspace-host> --profile=my-profile`
 - A SQL warehouse — the bundle looks up `Serverless Starter Warehouse` by default (present on fresh Free Edition workspaces); override with `--var="warehouse_id=<id>"` if it has been renamed or deleted
 - Permissions to deploy resources and run jobs, plus an authorized owner to create
   tables and apply Unity Catalog grants. App viewers also need the permissions
   described in sections 5 and 6.
+- Serverless compute with Unity Catalog row-filter support and real workspace
+  users for multi-role verification. A single-user workspace cannot prove
+  cross-user isolation; do not treat owner-only testing as a pass.
+
+Run from the repository root in PowerShell. Confirm your profile deliberately:
+
+```powershell
+databricks --version
+databricks auth profiles
+databricks current-user me --profile my-profile
+```
+
+Keep the same explicit profile, target and any `--var` overrides on subsequent
+validate/deploy/run commands. Do not copy tokens into source files.
 
 ## 1. Deploy the bundle
 
@@ -41,7 +57,8 @@ This registers four jobs, three dashboards, and the app resource, and uploads so
 files to the configured workspace folder. The catalog and schema are created by
 the seed job. Registration does not launch a new app deployment.
 
-```bash
+```powershell
+databricks bundle validate --strict --target dev --profile my-profile
 databricks bundle deploy -t dev --profile=my-profile
 ```
 
@@ -73,80 +90,100 @@ attributes only: seeding does not install a row filter, and example identities m
 mapped to real workspace principals before enforcing access. The Gold app reads
 as the signed-in user so an installed Gold row filter evaluates that viewer.
 
-```bash
-databricks bundle run -t dev seed_theater_data --profile=my-profile
+```powershell
+databricks bundle run -t dev seed_theater_data --profile=my-profile --params="catalog=theater_analytics,schema=bronze"
 ```
 
-The command above uses the bundle's default catalog and schema. To populate the
-fixed Bronze path needed by the modernized Silver and Gold workflows, use
-the explicit seed command in section 5 instead; do not run both unless you
-intend to generate data in both locations.
+This explicitly seeds the fixed Bronze path used by Silver and Gold, not the
+legacy bundle defaults (`workspace.fde_theater`). Run it only once during initial
+setup, or when intentionally regenerating Bronze. It replaces any manually
+maintained manager assignments, so remap test identities before rebuilding.
 
-Verify (adjust catalog/schema to match your vars):
+Verify:
 
 ```sql
-SHOW TABLES IN <catalog>.<schema>;
+SHOW TABLES IN theater_analytics.bronze;
 -- Expect: theater_layout, imdb_movie_metadata, pos_ticket_sales
 
-SELECT COUNT(*) FROM <catalog>.<schema>.pos_ticket_sales;
+SELECT COUNT(*) FROM theater_analytics.bronze.pos_ticket_sales;
 -- Expect: roughly 150k–200k transactions
 ```
 
 ## 3. Build the denormalized table
 
-The `build_denormalized_theater_sales` job inner-joins the three source tables into the wide table that powers the dashboard. Run after `seed_theater_data`.
+This step is optional for the Gold app. The legacy dashboard's SQL parameters
+default to `workspace.fde_theater`, independently of the fixed modernized paths.
+To initialize that separate comparison, deliberately seed the legacy location
+and run its inner-join transform:
 
-```bash
-databricks bundle run -t dev build_denormalized_theater_sales --profile=my-profile
+```powershell
+databricks bundle run -t dev seed_theater_data --profile=my-profile --params="catalog=workspace,schema=fde_theater"
+databricks bundle run -t dev build_denormalized_theater_sales --profile=my-profile --params="catalog=workspace,schema=fde_theater"
 ```
 
-Verify (adjust catalog/schema to match your vars):
+Verify:
 
 ```sql
-SELECT COUNT(*) FROM <catalog>.<schema>.denormalized_theater_sales;
+SELECT COUNT(*) FROM workspace.fde_theater.denormalized_theater_sales;
 ```
+
+For a different legacy location, change its dashboard catalog/schema parameters
+as well as the seed/transform parameters. Bundle variables do not rewrite those
+dashboard SQL parameter defaults.
 
 ## 4. Verify the workspace
 
-After both jobs complete, the workspace should have:
+After initial deployment/seeding (and optional section 3), verify:
 
 | Asset | Location | How to verify |
 |-------|----------|---------------|
-| 3 source tables | `<catalog>.<schema>` | `SHOW TABLES` returns `theater_layout`, `imdb_movie_metadata`, `pos_ticket_sales` |
-| 1 denormalized table | `<catalog>.<schema>.denormalized_theater_sales` | `DESCRIBE <catalog>.<schema>.denormalized_theater_sales` |
+| 3 source tables | `theater_analytics.bronze` | `SHOW TABLES` returns `theater_layout`, `imdb_movie_metadata`, `pos_ticket_sales` |
+| Optional legacy table | `workspace.fde_theater.denormalized_theater_sales` | `DESCRIBE` returns the joined columns |
 | 4 jobs | Workflows | `seed_theater_data`, `build_silver_theater_data`, `build_gold_theater_data`, and `build_denormalized_theater_sales` |
 | 3 Lakeview dashboards | `/Workspace/Users/<user name>/fde_interview/` | `Theater Performance`, `Theater Data Quality` (requires Silver), and `Theater Revenue Insights` (requires Gold) |
-| 1 Databricks App | `/Workspace/Users/<user name>/fde_interview/files/src/app` |
+| 1 Databricks App | Compute > Apps > `reel-insights-app` | Resource exists; deployment follows section 5 |
+
+Dashboards may fail to query until their Silver/Gold/feedback tables exist.
+If `reel-insights-app` already belongs to another bundle/user in the workspace,
+stop and coordinate ownership; do not overwrite another deployment.
 
 ## 5. Deploy and start the Reel Insights application
 
 The Gradio application reads `theater_analytics.gold.theater_daily_sales`.
-Run Bronze, Silver, and `build_gold_theater_data` first. As table owner, use
+After seeding Bronze in section 2, run Silver and `build_gold_theater_data`. As table owner, use
 the consolidated security notebook in section 6 to create
 `theater_analytics.gold.decision_feedback` without replacing existing approvals.
 The feedback table is not recreated/overwritten by the Gold pipeline.
 The app's warehouse resource grants its service principal `CAN_USE`, but Unity
 Catalog grants must be applied separately (section 6). Deploy and start only
 after the tables and grants are ready. Unlike the legacy dashboard, the app
-requires seeding the fixed Bronze path, regardless of the bundle defaults:
+requires the fixed Bronze path, regardless of the bundle defaults:
 
 ```powershell
-# Only seed on initial setup or intentional regeneration: overwrites Bronze.
-databricks bundle run --target dev --profile my-profile seed_theater_data --params="catalog=theater_analytics,schema=bronze"
+# Bronze must already exist from section 2; do not reseed for app-only edits.
 databricks bundle run --target dev --profile my-profile build_silver_theater_data
 databricks bundle run --target dev --profile my-profile build_gold_theater_data
-
-# After provisioning security (section 6), configure the allowlists as described below.
-databricks bundle deploy --target dev --profile my-profile --select apps.reel_insights_app --var="leadership_approvers=<approver-email>" --var="quarantine_operators=<operator-email>"
+databricks apps get reel-insights-app --profile my-profile --output json
 ```
 
-The bundle config defines the two allowlists as variables, but CLI versions may
-not materialize the bundle `config` block into the deployed `app.yaml`. The
-repository's runtime manifest deliberately contains no personal identities.
-Before publishing the app, prepare an **untracked copy** of `src/app`, add the
-two runtime entries shown below to its `app.yaml`, and upload that copy to a
-workspace directory. Use actual authorized email addresses; an empty or missing
-list denies the corresponding action.
+Use the returned `service_principal_client_id` in section 6. Complete that
+owner-run security setup and section 6a's data-access checks before sharing.
+The bundle only registers the app and its warehouse/job resources; the runtime
+manifest is not duplicated in `resources/apps.yml`.
+
+Prepare a clean **untracked copy** of the flat `src/app` source directory:
+
+```powershell
+$appSource = Join-Path $env:TEMP ("reel-insights-" + [guid]::NewGuid().ToString("N"))
+New-Item -ItemType Directory -Path $appSource | Out-Null
+Get-ChildItem .\src\app -File | Copy-Item -Destination $appSource
+Write-Output $appSource
+```
+
+In the copied `app.yaml`, replace the empty values of the two existing entries
+with actual authorized, comma-separated email addresses; do not append duplicate
+entries. Leave all `valueFrom` resource bindings unchanged. An empty/missing
+list denies the action. Do not commit the configured copy.
 
 ```yaml
   - name: LEADERSHIP_APPROVERS
@@ -155,16 +192,18 @@ list denies the corresponding action.
     value: "<operator-email>"
 ```
 
-Keep the entries under the existing `env:` list. Do not commit the configured
-copy. Publish the uploaded copy, then verify both allowlists and authorization
-with real test users:
+Keep those entries under `env:`. Upload and publish that exact copy (replace
+`<workspace-user>` with `userName` from `current-user me`):
 
 ```powershell
-databricks workspace import-dir "<local-configured-app-directory>" "/Workspace/Users/<workspace-user>/reel-insights-configured" --overwrite --profile my-profile
+databricks workspace import-dir "$appSource" "/Workspace/Users/<workspace-user>/reel-insights-configured" --overwrite --profile my-profile
 databricks apps deploy reel-insights-app --source-code-path "/Workspace/Users/<workspace-user>/reel-insights-configured" --profile my-profile
 ```
 
-For later app-only edits, update and redeploy that configured copy. Starting compute with
+Check each command succeeds before continuing. For later app-only edits, create
+a fresh configured copy of the current source, then upload and deploy again.
+If files were removed/renamed, upload to a fresh workspace source directory so
+stale files cannot remain. Starting compute with
 `databricks apps start reel-insights-app` does not publish changed source/config.
 Confirm the active deployment succeeds with:
 
@@ -172,7 +211,7 @@ Confirm the active deployment succeeds with:
 databricks apps get reel-insights-app --profile my-profile --output json
 ```
 
-Both app configuration surfaces now default to `theater_analytics.gold`.
+The runtime manifest defaults to `theater_analytics.gold`.
 The bundle app resource requests `user_api_scopes: [sql]`. After deploying,
 reopen the app and authorize SQL access. Each viewer needs warehouse CAN_USE,
 USE CATALOG on `theater_analytics`, USE SCHEMA on `theater_analytics.gold`,
@@ -181,10 +220,10 @@ also recognize their manager/zone-manager identity or leadership membership.
 Do not add the app service principal to leadership to work around viewer RLS.
 Missing user authorization produces an error, never shared-principal Gold reads.
 `THEATER_FEEDBACK_TABLE` defaults to `decision_feedback`. `LEADERSHIP_APPROVERS`
-contains the explicitly configured approval email(s), comma-separated. Keep
-the configured runtime copy consistent with the bundle variables.
-The runtime `app.yaml` uses `valueFrom` for resources; the bundle resource
-configuration uses `value_from`.
+contains the explicitly configured approval email(s), comma-separated.
+Do not pass undeclared allowlist `--var` flags or rely on `bundle run` to retain
+your private configuration: it republishes the repository's deny-by-default copy.
+The runtime `app.yaml` uses `valueFrom` for resources.
 Only authenticated viewers whose proxy-supplied email is allowlisted can approve;
 others can read metrics. Missing identity disables approval. Do not expose this
 Gradio server directly outside the authenticated Databricks Apps reverse proxy.
@@ -192,6 +231,13 @@ Gradio server directly outside the authenticated Databricks Apps reverse proxy.
 Additional commands for managing the lifecycle of your application can be found at https://docs.databricks.com/aws/en/dev-tools/cli/reference/apps-commands
 
 ## 6. Configure Gold row security and app access
+
+The notebook is uploaded by bundle deploy under
+`<workspace-root>/files/src/notebooks/configure_theater_security`.
+Run it interactively on serverless compute as the Gold table owner (with Bronze/
+Silver access and privilege to create functions/tables and grant their use).
+Keep the sibling `theater_security.py` workspace file beside the notebook; it
+shares the DDL/grants with the legacy creation/grant entry points.
 
 Retrieve `service_principal_client_id` using the `apps get` command above (not
 the numeric `service_principal_id`). After Gold sales and Silver quarantine
@@ -203,17 +249,19 @@ Apply creates missing leadership, feedback, and recovery tables; replaces the
 sales row-filter function and attachment; and grants the app the Gold and Silver
 privileges shown in the notebook. It neither inserts leadership users nor
 revokes prior permissions. Existing membership is preserved.
+The leadership lookup schema is `gold.leadership_users(user_email STRING NOT NULL)`.
+If an existing lookup has a different schema, stop and migrate it explicitly;
+the notebook does not overwrite or guess existing membership columns.
 Optionally set `viewer_principal` to grant a specified user or group catalog and
 Gold schema use plus sales SELECT; warehouse CAN_USE remains a separate grant.
 Leave it blank to make no viewer grant. Review any existing row filter before
 apply: replacing the function may affect every table that references it.
 
-The function matches the deployed policy: `theater_leadership` account-group
+The function installs this policy: `theater_leadership` account-group
 members and entries in `gold.leadership_users` can see all sales, while other
 viewers see matching manager/zone-manager rows. Confirm the group exists and the
 table owner can read the lookup table. Maintain membership separately after
-approval; membership is not the same as the app's approval allowlist. Test
-leadership, manager, zone manager, and unrelated users with their own identities.
+approval; membership is not the same as the app's approval allowlist. Test leadership, manager, zone manager, and unrelated users with their own identities.
 The sales filter does **not** apply to `gold.decision_feedback`; the app shares
 that feedback with its viewers.
 
@@ -230,8 +278,7 @@ GRANT SELECT, MODIFY ON TABLE theater_analytics.gold.decision_feedback TO `<app-
 quarantine, or the entire schema.
 The application inserts approval events via an insert-only MERGE; the
 underlying `MODIFY` privilege is broader and must be restricted to trusted app
-administrators. No grants are performed by app startup. The updated grant
-notebook does not grant schema-wide SELECT/MODIFY. Existing permissions are not
+administrators. No grants are performed by app startup. The shared grant helpers do not grant schema-wide SELECT/MODIFY. Existing permissions are not
 revoked automatically. The individual grant notebooks remain available and
 require the client ID widget; the consolidated notebook covers both grant sets.
 
@@ -247,6 +294,115 @@ The same selection can be retried without another event; refreshing creates a
 new review/decision ID. Stale recommendations are rejected if period, evidence,
 or top/bottom eligibility changes. Refresh history after approval to see it.
 This workflow records decisions only; it does not schedule or remove screenings.
+
+## 6a. Verify role-based access before sharing
+
+### Prepare real test identities and a fixed snapshot
+
+Use distinct workspace users for leadership, theater manager, zone manager and
+an unrelated viewer. Grant them app `CAN_USE`, warehouse `CAN_USE`, and the
+viewer grants via section 6's `viewer_principal` widget (repeat apply for each
+user or grant a dedicated viewer group). Do not grant the unrelated viewer
+leadership membership, direct Bronze/Silver access, or permission to edit policy
+tables/functions. Keep approval/operator allowlists separate from sales visibility.
+
+As an authorized owner, explicitly enroll the approved test leader, or arrange
+membership in the `theater_leadership` **account** group with an administrator.
+Do not enroll the app service principal. For the lookup-table option, replace
+the placeholder with the approved real user's identity and execute:
+
+```sql
+MERGE INTO theater_analytics.gold.leadership_users t
+USING (SELECT lower('<leader-email>') AS user_email) s
+ON lower(trim(t.user_email)) = s.user_email
+WHEN NOT MATCHED THEN INSERT (user_email) VALUES (s.user_email);
+```
+
+In the synthetic demo workspace only, map real manager identities into the
+Bronze reference source, then rebuild Silver and Gold. Do not edit Gold directly
+(the next refresh replaces it), and do not reseed after mapping:
+
+```sql
+UPDATE theater_analytics.bronze.theater_layout
+SET manager_email = '<manager-email>'
+WHERE theater_id = 'T001';
+
+UPDATE theater_analytics.bronze.theater_layout
+SET zone_manager_email = '<zone-manager-email>'
+WHERE state = 'NY';
+```
+
+```powershell
+databricks bundle run --target dev --profile my-profile build_silver_theater_data
+databricks bundle run --target dev --profile my-profile build_gold_theater_data
+```
+
+Stop other writers during verification. As the explicitly enrolled leader,
+capture the exact expected visible row counts and distinct theater IDs using
+the full Gold snapshot, not the app's seven-day window:
+
+```sql
+SELECT current_user(), is_account_group_member('theater_leadership');
+SELECT COUNT(*) AS all_rows,
+       sort_array(collect_set(COALESCE(theater_id, '<NULL>'))) AS theater_ids
+FROM theater_analytics.gold.theater_daily_sales;
+
+SELECT theater_id, state, manager_email, zone_manager_email, COUNT(*) AS rows
+FROM theater_analytics.gold.theater_daily_sales
+GROUP BY theater_id, state, manager_email, zone_manager_email
+ORDER BY state, theater_id;
+```
+
+Require a nonempty baseline with multiple theaters/regions. Sum only the groups
+matching the manager/zone manager's real identity to calculate their expected
+counts; include the union if a user holds both roles. Rows without a matching
+layout are visible only to leadership. A null theater ID is represented as
+`<NULL>` in verification. Never invent expected counts or accept zero for an
+authorized role to make a test pass.
+
+### Run the actual-viewer check
+
+Each user opens [verify_theater_access.py](src/notebooks/verify_theater_access.py)
+in their own session and runs it **interactively**, not through a job with the
+owner's run-as identity. Set:
+
+- `expected_user`: that user's real workspace login.
+- `expected_theater_ids_json`: e.g. `["T001"]`, the NY theater list, the full
+  leadership list, or `[]` for the unrelated user.
+- `expected_row_count`: the exact owner-baseline count for that role, or `0`
+  for the unrelated user.
+
+The notebook checks `current_user()`, the installed filter and column binding,
+and exact row count/theater set. Wrong identity, missing/misbound filter,
+missing/extra rows, or permission errors fail explicitly. It does not impersonate
+an email or evaluate the policy using caller-supplied identity strings.
+
+| Test identity | Expected Gold access | Expected application behavior |
+|---|---|---|
+| Leader | All baseline rows/theaters, including unmatched groups | Can approve only if also explicitly allowlisted |
+| Theater manager | Exact assigned theater rows | Cannot approve unless separately allowlisted; Operations hidden |
+| Zone manager | Exact assigned-zone theater rows | No data from other zones; Operations hidden unless separately allowlisted |
+| Unrelated viewer | Query succeeds with zero rows | No sales, approvals denied, Operations hidden |
+| Operations user | Sales still follows their own role | Full quarantine queue; can submit/track a verified correction |
+
+After publishing the configured app, repeat the matrix in separate signed-in
+browser sessions and authorize SQL access. State/theater filters must never
+expand visibility. Check decision feed visibility is intentionally global,
+while Operations is not accessible to a non-operator. Confirm approval and
+Operations callbacks deny unauthorized actions (local callback regression
+tests cover this too). Repeat the SQL checks after a Gold refresh and a recovery
+to prove policy attachment/grants survive the operational path.
+
+For the Gold dashboard, publish using **viewer credentials**, not embedded owner
+credentials, and test with the same users. Its feedback page reads the unfiltered
+audit table: only grant feedback SELECT to explicitly approved audit viewers.
+Users without that separate permission should not be given owner credentials to
+make the page work. Keep the legacy Bronze and DQ dashboards owner/operator-only;
+the Gold sales filter does not secure those datasets.
+
+Record each actual identity, expected/observed count, policy metadata, timestamp
+and app result in the interview evidence. A screenshot from the owner alone is
+not proof. Local mocked tests are regression checks, not certification of live RLS.
 
 ## 7. Build Silver POS ticket sales (required for the Gold app)
 
@@ -353,15 +509,15 @@ normal ingestion behavior.
    the consolidated security notebook in section 6 to create the request ledger
    and apply the app grants. It does **not** grant app MODIFY on Silver sales or
    quarantine. Review older broad grants separately.
-2. Set the `quarantine_operators` bundle variable and configure the runtime
-   `QUARANTINE_OPERATORS` allowlist as described in section 5. Operator permission
+2. Configure the runtime `QUARANTINE_OPERATORS` allowlist in the untracked app
+   copy as described in section 5. Operator permission
    is distinct from leadership approval and grants access to the full queue.
 3. Deploy the Silver job and app resources, then publish the configured app copy
    using section 5:
 
    ```powershell
    databricks bundle validate --strict --target dev --profile my-profile
-   databricks bundle deploy --target dev --profile my-profile --select jobs.build_silver_theater_data --select apps.reel_insights_app --var="leadership_approvers=<approver-email>" --var="quarantine_operators=<operator-email>"
+   databricks bundle deploy --target dev --profile my-profile --select jobs.build_silver_theater_data --select apps.reel_insights_app
    ```
 
    The app resource binds `QUARANTINE_RECOVERY_JOB_ID` to the existing Silver job
@@ -403,6 +559,23 @@ counts do not shrink. Gold is a full snapshot refresh after recovery, not an
 incremental addition to already aggregated revenue. Avoid concurrent standalone
 Gold runs. Provisioning notebooks and these deployment commands must be executed
 explicitly; implementing the feature locally does not move production data.
+
+## Local regression checks
+
+Use Python 3.11 or 3.12 in an isolated environment. No Databricks credentials
+are needed; SQL/SDK calls are mocked. These checks cover dashboard parsing,
+workflow/resource bindings, owner provisioning, policy decisions and viewer
+verification failures, not execution on live Spark/Unity Catalog:
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe -B -m unittest discover -s tests -v
+```
+
+Before deploying, also run `databricks bundle validate --strict --target dev
+--profile my-profile` against the deliberately selected workspace. A local
+JSON/YAML parse is not a replacement for workspace validation.
 
 ## Troubleshooting
 

@@ -15,14 +15,13 @@
 #   build_gold_theater_data. Create decision_feedback and grant app access
 #   using the owner-run notebooks documented in SETUP.md.
 # Deploy updated Gradio code/config and launch it:
-#   databricks bundle deploy -t dev --profile my-profile --select apps.reel_insights_app
-#   databricks bundle run -t dev --profile my-profile reel_insights_app
+#   Follow SETUP.md section 5 to publish the configured runtime manifest.
 #
 # Default catalog is workspace (Unity Catalog).
 
 bundle:
   name: fde_theater
-  databricks_cli_version: ">= 0.260.0"
+  databricks_cli_version: ">= 1.0.0"
 
 include:
   - resources/dashboards.yml
@@ -51,6 +50,6 @@ targets:
     mode: development
     default: true
     workspace:
-      root_path: /Workspace/Users/saibharathparsam@outlook.com/fde_interview
+      root_path: /Workspace/Users/${workspace.current_user.userName}/fde_interview
     run_as:
-      user_name: saibharathparsam@outlook.com
+      user_name: ${workspace.current_user.userName}

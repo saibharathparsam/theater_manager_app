@@ -1,9 +1,12 @@
 import unittest
+import sys
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src" / "notebooks"))
+from theater_security import quarantine_grants
 
 
 class RecoveryWiringTests(unittest.TestCase):
@@ -42,16 +45,15 @@ class RecoveryWiringTests(unittest.TestCase):
         ):
             self.assertEqual(self.tasks[task]["max_retries"], 2)
 
-    def test_app_manifests_bind_job_resource_and_same_operator_configuration(self):
+    def test_runtime_manifest_is_authoritative_and_binds_registered_resources(self):
         app = yaml.safe_load(
             (ROOT / "resources" / "apps.yml").read_text()
         )["resources"]["apps"]["reel_insights_app"]
         standalone = yaml.safe_load((ROOT / "src" / "app" / "app.yaml").read_text())
-        standalone_env = [
-            {("value_from" if key == "valueFrom" else key): value for key, value in item.items()}
-            for item in standalone["env"]
-        ]
-        self.assertEqual(app["config"]["env"], standalone_env)
+        self.assertNotIn("config", app)
+        environment = {item["name"]: item for item in standalone["env"]}
+        self.assertEqual(environment["LEADERSHIP_APPROVERS"]["value"], "")
+        self.assertEqual(environment["QUARANTINE_OPERATORS"]["value"], "")
         self.assertEqual(
             {item["name"]: item["valueFrom"] for item in standalone["env"] if "valueFrom" in item},
             {"DATABRICKS_WAREHOUSE_ID": "sql-warehouse", "QUARANTINE_RECOVERY_JOB_ID": "quarantine-recovery-job"},
@@ -62,10 +64,16 @@ class RecoveryWiringTests(unittest.TestCase):
         })
 
     def test_app_does_not_receive_sales_or_quarantine_modify_grants(self):
-        source = (ROOT / "src" / "notebooks" / "grant_quarantine_access.py").read_text()
-        self.assertIn("GRANT SELECT, MODIFY ON TABLE theater_analytics.silver.quarantine_recovery_requests", source)
-        self.assertNotIn("GRANT SELECT, MODIFY ON TABLE theater_analytics.silver.pos_ticket_sales", source)
-        self.assertNotIn("GRANT MODIFY ON", source)
+        statements = quarantine_grants("00000000-0000-0000-0000-000000000001")
+        modifies = [statement for statement in statements if "MODIFY" in statement]
+        self.assertEqual(modifies, [
+            "GRANT SELECT, MODIFY ON TABLE theater_analytics.silver.quarantine_recovery_requests "
+            "TO `00000000-0000-0000-0000-000000000001`",
+        ])
+        self.assertTrue(any(
+            statement.startswith("GRANT SELECT ON TABLE theater_analytics.silver.pos_ticket_sales_quarantine ")
+            for statement in statements
+        ))
 
     def test_existing_pos_normalizer_is_reused_and_old_ingestion_is_preserved(self):
         source = (ROOT / "src" / "notebooks" / "process_quarantine_recovery.py").read_text()

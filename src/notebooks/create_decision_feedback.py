@@ -11,23 +11,9 @@
 # COMMAND ----------
 
 from pyspark.sql import SparkSession
+from theater_security import FEEDBACK_DDL
 
 spark = SparkSession.builder.getOrCreate()
 spark.sql("CREATE SCHEMA IF NOT EXISTS theater_analytics.gold")
-spark.sql("""
-    CREATE TABLE IF NOT EXISTS theater_analytics.gold.decision_feedback (
-        decision_id STRING NOT NULL,
-        movie_id STRING NOT NULL,
-        movie_title STRING NOT NULL,
-        action STRING NOT NULL,
-        theater_id STRING NOT NULL,
-        period_start DATE NOT NULL,
-        period_end DATE NOT NULL,
-        approver_email STRING NOT NULL,
-        approved_at TIMESTAMP NOT NULL,
-        approval_note STRING NOT NULL,
-        source_table STRING NOT NULL,
-        evidence_json STRING NOT NULL
-    ) USING DELTA
-""")
+spark.sql(FEEDBACK_DDL)
 print("Ready: theater_analytics.gold.decision_feedback (existing records preserved).")

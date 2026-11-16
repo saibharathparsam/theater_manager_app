@@ -45,12 +45,20 @@ Yes. All ingest scripts use `seed=42` and write in overwrite mode, so rerunning 
 **Q: How do I deploy the Databricks App?**
 The Gradio app `reel-insights-app` reads `theater_analytics.gold.theater_daily_sales`
 and records approved decisions in `theater_analytics.gold.decision_feedback`.
-Build Gold, create feedback, and apply the owner-run grants in [SETUP.md](SETUP.md#5-deploy-and-start-the-provided-application) first. Publish app-only edits with:
+Build Gold, run owner security setup, and verify real-user roles using
+[SETUP.md](SETUP.md#5-deploy-and-start-the-reel-insights-application) first.
+The runtime `app.yaml` defaults approval/operator allowlists to empty. Prepare
+an untracked configured source copy as described there; publish that exact copy:
 
 ```powershell
-databricks bundle deploy --target dev --profile my-profile --select apps.reel_insights_app
-databricks bundle run --target dev --profile my-profile reel_insights_app
+databricks workspace import-dir "<local-configured-app-directory>" "/Workspace/Users/<workspace-user>/reel-insights-configured" --overwrite --profile my-profile
+databricks apps deploy reel-insights-app --source-code-path "/Workspace/Users/<workspace-user>/reel-insights-configured" --profile my-profile
+databricks apps get reel-insights-app --profile my-profile --output json
 ```
+
+`bundle deploy` registers the app and its resources but does not publish new
+source. `bundle run reel_insights_app` publishes the repository's deny-by-default
+manifest, not your configured copy. There are no allowlist bundle variables.
 
 The provided application is a Gradio app however you should feel free to modify it to use whatever framework you feel most comfortable with (Streamlit, Flask, Dash, FastAPI + frontend, etc.).
 
@@ -66,6 +74,13 @@ Gold reads use the signed-in viewer's proxy-forwarded token with the app's
 access and must authorize the app. Feedback history and approved inserts use
 the app service principal and require the grants in [SETUP.md](SETUP.md).
 The feedback history is shared with app viewers, not filtered by Gold sales RLS.
+
+**Q: How do I prove the roles work?**
+Use the [role verification procedure](SETUP.md#6a-verify-role-based-access-before-sharing).
+The verification notebook asserts the actual querying identity, installed row
+filter/bindings, exact theater set and row count against an owner baseline.
+Run as each real user, not via a run-as-owner job. One owner's screenshot or
+local mocked tests cannot establish cross-user isolation.
 
 ---
 
